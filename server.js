@@ -353,6 +353,15 @@ async function extractWithGemini(filePath, originalName) {
 }
 
 app.use(express.json({ limit: '1mb' }));
+
+// Explicit root so Vercel/serverless serves index.html (static may not see project root)
+app.get('/', (req, res) => {
+  const index = path.join(__dirname, 'index.html');
+  if (fs.existsSync(index)) return res.sendFile(index);
+  res.sendFile(path.join(process.cwd(), 'index.html'), (err) => {
+    if (err) res.status(404).send('Not found');
+  });
+});
 app.use(express.static(__dirname));
 
 app.get('/api/data', (req, res) => {
