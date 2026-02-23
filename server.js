@@ -363,6 +363,7 @@ const sendHtml = (filename, req, res) => {
   });
 };
 app.get('/', (req, res) => sendHtml('index.html', req, res));
+app.get('/index.html', (req, res) => sendHtml('index.html', req, res));
 app.get('/review.html', (req, res) => sendHtml('review.html', req, res));
 app.use(express.static(__dirname));
 
