@@ -1,0 +1,220 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Basketball Match",
+  "type": "object",
+  "properties": {
+    "teamAName": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Name of Team A"
+    },
+    "teamBName": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Name of Team B"
+    },
+    "competitionName": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Name of the competition"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of the match (YYYY-MM-DD)"
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^([01]\\d|2[0-3]):([0-5]\\d)$",
+      "description": "Time of the match in 24-hour format (HH:MM)"
+    },
+    "place": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Venue of the match"
+    },
+    "referee1": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Name of the first referee"
+    },
+    "referee2": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Name of the second referee"
+    },
+    "teamATimeoutsFirstHalf": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2,
+      "description": "Team A time-outs used in the first half. Check each box: slash (/), backslash (\\), or horizontal line (-) = one time-out; blank = not used. First half has 2 boxes. Sum to get total (0-2)."
+    },
+    "teamATimeoutsSecondHalf": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3,
+      "description": "Team A time-outs used in the second half. Same box notation: /, \\, or - = used; blank = not used. Second half has 3 boxes. Sum to get total (0-3)."
+    },
+    "teamATimeoutsExtraPeriods": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Team A time-outs used in extra period(s). Each extra period has 3 boxes (/, \\, - = used; blank = not used). If no slashes or lines in extra-period boxes, game had no extra periods (use 0). Sum all extra-period boxes to get total."
+    },
+    "teamAFoulsPeriod1": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "Team A team fouls in period 1 (from the sheet only). Four boxes per period; each /, \\, or - = one foul, blank = none. Count only what is marked (0-4). If all four boxes are ticked, record 4—the actual count may be higher (fifth foul puts the other team in the bonus). A team with 4 fouls committed against them before the end of the quarter is in the bonus."
+    },
+    "teamAFoulsPeriod2": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "Team A team fouls in period 2. Same as period 1: four boxes, count /, \\, - only (0-4). All four ticked = record 4 (may be more; bonus applies)."
+    },
+    "teamAFoulsPeriod3": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "Team A team fouls in period 3. Same: four boxes, count marked fouls 0-4; four ticked = 4 (may be more; bonus)."
+    },
+    "teamAFoulsPeriod4": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "Team A team fouls in period 4. Same: four boxes, count 0-4; four ticked = 4 (may be more; bonus)."
+    },
+    "teamBTimeoutsFirstHalf": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2,
+      "description": "Team B time-outs used in the first half. Check each box: /, \\, or - = one time-out; blank = not used. First half has 2 boxes. Sum to get total (0-2)."
+    },
+    "teamBTimeoutsSecondHalf": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3,
+      "description": "Team B time-outs used in the second half. Same box notation: /, \\, - = used; blank = not used. Second half has 3 boxes. Sum to get total (0-3)."
+    },
+    "teamBTimeoutsExtraPeriods": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Team B time-outs used in extra period(s). Each extra period has 3 boxes. If no slashes or lines in extra-period boxes, use 0. Sum all extra-period boxes to get total."
+    },
+    "teamBFoulsPeriod1": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "Team B team fouls in period 1 (from the sheet only). Four boxes per period; each /, \\, or - = one foul, blank = none. Count only what is marked (0-4). If all four boxes are ticked, record 4—the actual count may be higher (fifth foul puts the other team in the bonus). A team with 4 fouls committed against them before the end of the quarter is in the bonus."
+    },
+    "teamBFoulsPeriod2": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "Team B team fouls in period 2. Same: four boxes, count 0-4; four ticked = 4 (may be more; bonus)."
+    },
+    "teamBFoulsPeriod3": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "Team B team fouls in period 3. Same: four boxes, count 0-4; four ticked = 4 (may be more; bonus)."
+    },
+    "teamBFoulsPeriod4": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4,
+      "description": "Team B team fouls in period 4. Same: four boxes, count 0-4; four ticked = 4 (may be more; bonus)."
+    },
+    "teamAPlayers": {
+      "type": "array",
+      "maxItems": 12,
+      "description": "Player table (L1): one object per player; max 12 players. Columns: BIPIN No., Player In (4 boxes Q1–Q4), Player Name, Kit No., Fouls (5 boxes). Record each row.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "bipinNo": { "type": "string", "description": "Basketball Ireland PIN number." },
+          "playerInQuarter1": { "type": "string", "description": "Player In Q1: X, /, or \\ = played; empty = did not play. Empty boxes may mean not filled out; scorekeepers often mark only starters." },
+          "playerInQuarter2": { "type": "string", "description": "Player In Q2: X, /, or \\ = played; empty = did not play." },
+          "playerInQuarter3": { "type": "string", "description": "Player In Q3: X, /, or \\ = played; empty = did not play." },
+          "playerInQuarter4": { "type": "string", "description": "Player In Q4: X, /, or \\ = played; empty = did not play." },
+          "playerName": { "type": "string", "description": "Player name (any format as on sheet)." },
+          "kitNo": { "type": "string", "description": "Kit number." },
+          "foul1": { "type": "string", "description": "Foul box 1: P (no FTs), P1/P2/P3 (free throws), U=unsportsmanlike, D=disqualifying, T=technical, - = not committed by end, empty = blank." },
+          "foul2": { "type": "string", "description": "Foul box 2. Same notation." },
+          "foul3": { "type": "string", "description": "Foul box 3. Same notation." },
+          "foul4": { "type": "string", "description": "Foul box 4. Same notation." },
+          "foul5": { "type": "string", "description": "Foul box 5. Fifth foul = fouled out, ejected. Same notation." }
+        }
+      }
+    },
+    "teamBPlayers": {
+      "type": "array",
+      "maxItems": 12,
+      "description": "Player table (L2): same structure as teamAPlayers for Team B; max 12 players.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "bipinNo": { "type": "string", "description": "Basketball Ireland PIN number." },
+          "playerInQuarter1": { "type": "string", "description": "Player In Q1: X, /, or \\ = played; empty = did not play." },
+          "playerInQuarter2": { "type": "string", "description": "Player In Q2: X, /, or \\ = played; empty = did not play." },
+          "playerInQuarter3": { "type": "string", "description": "Player In Q3: X, /, or \\ = played; empty = did not play." },
+          "playerInQuarter4": { "type": "string", "description": "Player In Q4: X, /, or \\ = played; empty = did not play." },
+          "playerName": { "type": "string", "description": "Player name (any format)." },
+          "kitNo": { "type": "string", "description": "Kit number." },
+          "foul1": { "type": "string", "description": "Foul 1: P, P1, P2, P3, U, D, T, -, or empty." },
+          "foul2": { "type": "string", "description": "Foul 2. Same notation." },
+          "foul3": { "type": "string", "description": "Foul 3. Same notation." },
+          "foul4": { "type": "string", "description": "Foul 4. Same notation." },
+          "foul5": { "type": "string", "description": "Foul 5. Fifth foul = fouled out. Same notation." }
+        }
+      }
+    },
+    "runningScoreEvents": {
+      "type": "array",
+      "description": "Running score (R1): read grid top-down, inner columns (A jersey | A mark | B mark | B jersey). For each mark: dot = 1 pt, slash/backslash = 2 pt, circle = 3 pt; jersey = number beside mark as written (do not reinterpret). One object per marked point, sorted by point.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "point": { "type": "integer", "minimum": 1, "maximum": 120, "description": "Scoreboard point number (1-120)." },
+          "team": { "type": "string", "enum": ["A", "B"], "description": "Team that scored." },
+          "type": { "type": "string", "enum": ["1", "2", "3"], "description": "1 = free throw (dot), 2 = two-pointer (slash/backslash), 3 = three-pointer (circle)." },
+          "jersey": { "type": "string", "description": "Scorer jersey number." }
+        },
+        "required": ["point", "team", "type", "jersey"]
+      }
+    },
+    "periodScoresTeamA": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": { "type": "integer", "minimum": 0 },
+      "description": "Points scored by Team A in each period (1-4), from Scores section if visible."
+    },
+    "periodScoresTeamB": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": { "type": "integer", "minimum": 0 },
+      "description": "Points scored by Team B in each period (1-4), from Scores section if visible."
+    },
+    "finalScoreTeamA": { "type": "integer", "minimum": 0, "description": "Team A final score." },
+    "finalScoreTeamB": { "type": "integer", "minimum": 0, "description": "Team B final score." },
+    "pointsPerColumn": { "type": "integer", "minimum": 40, "description": "Points per main column in R1 grid (40 or 60)." },
+    "r2PeriodScoresTeamA": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "integer", "minimum": 0 }, "description": "R2 – Period Scores: points scored by Team A in each period only (Q1, Q2, Q3, Q4), not cumulative. Omit if R2 not on sheet." },
+    "r2PeriodScoresTeamB": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "integer", "minimum": 0 }, "description": "R2 – Period Scores: points scored by Team B in each period only. Omit if not on sheet." },
+    "r3FinalScoreTeamA": { "type": "integer", "minimum": 0, "description": "R3 – Final: Team A total final score (all periods and extra periods). Omit if R3 not on sheet." },
+    "r3FinalScoreTeamB": { "type": "integer", "minimum": 0, "description": "R3 – Final: Team B total final score. Omit if not on sheet." },
+    "r3WinningTeamName": { "type": "string", "description": "R3 – Final: name of the winning team as written underneath the final score. Empty if not on sheet." }
+  },
+  "required": [
+    "teamAName",
+    "teamBName",
+    "competitionName",
+    "date",
+    "time",
+    "place",
+    "referee1",
+    "referee2"
+  ],
+  "additionalProperties": false
+}
