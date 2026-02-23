@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stats review – Scoresheet Analyser</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --border: #2d3a4d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --home: #3fb950;
+      --away: #f85149;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'SF Mono', 'Consolas', monospace;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 24px;
+      line-height: 1.5;
+    }
+    .nav { margin-bottom: 20px; }
+    .nav a { color: var(--muted); font-size: 0.85rem; text-decoration: none; }
+    .nav a:hover { color: var(--accent); }
+    h1 { font-size: 1.25rem; margin: 0 0 24px; color: var(--muted); }
+    section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+    }
+    section h2 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin: 0 0 12px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
+    .row:last-child { margin-bottom: 0; }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field label { font-size: 0.7rem; color: var(--muted); }
+    input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 10px;
+      border-radius: 4px;
+      font: inherit;
+      min-width: 160px;
+    }
+    input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .save-status { position: fixed; bottom: 16px; right: 16px; padding: 8px 12px; border-radius: 6px; font-size: 0.8rem; opacity: 0; transition: opacity 0.2s; }
+    .save-status.saved { background: var(--home); color: var(--bg); opacity: 1; }
+    .save-status.error { background: var(--away); color: #fff; opacity: 1; }
+    .confirm-bar { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+    .confirm-bar button {
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .confirm-bar button:hover { filter: brightness(1.1); }
+    .confirm-bar button:active { filter: brightness(0.95); }
+    .player-table-wrap { width: 100%; overflow-x: auto; }
+    table.roster-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    table.roster-table th { text-align: left; padding: 6px 8px; color: var(--muted); font-weight: 600; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border); }
+    table.roster-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    table.roster-table tr:hover { background: rgba(255,255,255,0.02); }
+    table.roster-table .col-no { width: 4em; text-align: center; }
+    table.roster-table .col-player { min-width: 100px; }
+    table.roster-table .col-bipin { width: 70px; color: var(--muted); font-size: 0.75rem; }
+    table.roster-table .col-quarters { width: 80px; font-size: 0.75rem; color: var(--muted); }
+    table.roster-table .col-fouls { width: 100px; font-size: 0.75rem; }
+    table.roster-table .col-remove { width: 60px; text-align: right; }
+    table.roster-table input { width: 100%; min-width: 0; padding: 4px 6px; font-size: 0.8rem; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; color: var(--text); }
+    table.roster-table input:focus { outline: none; border-color: var(--accent); }
+    table.roster-table .remove-player { background: transparent; color: var(--muted); border: none; padding: 2px 6px; font-size: 0.7rem; cursor: pointer; }
+    table.roster-table .remove-player:hover { color: var(--away); }
+    .add-player-btn { background: var(--border); color: var(--text); border: none; padding: 8px 14px; border-radius: 6px; font: inherit; cursor: pointer; margin-top: 8px; }
+    .add-player-btn:hover { background: var(--accent); color: var(--bg); }
+    .add-player-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .add-player-btn:disabled:hover { background: var(--border); color: var(--text); }
+    .teams-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 900px) { .teams-wrap { grid-template-columns: 1fr; } }
+    .team-block {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+    }
+    .team-block.team-a { border-left: 4px solid var(--home); }
+    .team-block.team-b { border-left: 4px solid var(--away); }
+    .team-block h2 { font-size: 0.85rem; margin: 0; color: var(--text); }
+    .team-block h2 .muted { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: normal; }
+    .team-block .sub-section { margin-top: 4px; }
+    .team-block .sub-section h3 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+    .player-count { font-size: 0.7rem; color: var(--muted); margin-left: 8px; }
+    #running-score .sub-section { margin-bottom: 12px; }
+    .r1-scores-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 12px; }
+    .r1-scores-row .field input { min-width: 3em; }
+    .r1-grid-wrap { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+    .r1-blocks { display: flex; gap: 16px; flex-wrap: wrap; }
+    .r1-block { flex: 0 0 auto; }
+    table.r1-table { border-collapse: collapse; font-size: 0.7rem; }
+    table.r1-table th { padding: 3px 4px; color: var(--muted); font-weight: 600; font-size: 0.6rem; text-transform: uppercase; border: 1px solid var(--border); }
+    table.r1-table td { padding: 2px 4px; border: 1px solid var(--border); vertical-align: middle; }
+    table.r1-table .r1-pt { width: 2em; text-align: right; color: var(--muted); }
+    table.r1-table .r1-jersey { width: 2.5em; }
+    table.r1-table .r1-point { width: 3em; text-align: center; }
+    table.r1-table input.r1-jersey-inp { width: 100%; min-width: 0; padding: 2px 3px; font-size: 0.7rem; background: var(--bg); border: 1px solid var(--border); border-radius: 2px; color: var(--text); }
+    table.r1-table select.r1-mark { padding: 2px 0; font-size: 0.7rem; background: var(--bg); border: 1px solid var(--border); color: var(--text); cursor: pointer; min-width: 2.5em; }
+    table.r1-table tr.r1-unused { opacity: 0.4; }
+    table.r1-table tr.r1-unused input { background: var(--card); }
+    table.r1-table td.r1-quarter-end-a { border-bottom: 2px solid var(--home); }
+    table.r1-table td.r1-quarter-end-b { border-bottom: 2px solid var(--away); }
+    .r1-view-toggle { margin-bottom: 10px; font-size: 0.8rem; }
+    .r1-view-toggle label { margin-right: 16px; cursor: pointer; }
+    .r1-muted { font-size: 0.75rem; color: var(--muted); margin: 0 0 10px; }
+    table.r1-quarter-table { border-collapse: collapse; font-size: 0.85rem; margin-bottom: 16px; }
+    table.r1-quarter-table th, table.r1-quarter-table td { padding: 8px 12px; border: 1px solid var(--border); text-align: center; }
+    table.r1-quarter-table th { background: var(--bg); color: var(--muted); }
+    table.r1-player-table { border-collapse: collapse; font-size: 0.8rem; width: 100%; max-width: 480px; margin-bottom: 16px; }
+    table.r1-player-table th, table.r1-player-table td { padding: 6px 8px; border: 1px solid var(--border); }
+    table.r1-player-table th { background: var(--bg); color: var(--muted); text-align: left; }
+    table.r1-player-table .num { text-align: right; }
+    .r1-player-section { margin-bottom: 20px; }
+    .r1-player-section h4 { font-size: 0.75rem; color: var(--muted); margin: 0 0 8px; }
+    .r1-crosscheck-msg { font-size: 0.8rem; margin: 0; }
+    .r1-crosscheck-ok { color: var(--home); }
+    .r1-crosscheck-mismatch { color: var(--away); }
+    .r1-consistency { margin-top: 12px; font-size: 0.8rem; padding: 10px; border-radius: 4px; border: 1px solid var(--border); }
+    .r1-consistency.warn { background: rgba(248,81,73,0.1); border-color: var(--away); color: var(--away); }
+    .r1-consistency.ok { color: var(--home); }
+    table.r1-player-table input.player-pts { width: 3em; padding: 4px 6px; font-size: 0.8rem; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; color: var(--text); text-align: right; }
+    table.r1-player-table input.player-pts:focus { outline: none; border-color: var(--accent); }
+  </style>
+</head>
+<body>
+  <nav class="nav"><a href="index.html">← Upload scoresheet</a></nav>
+  <h1>Stats review</h1>
+
+  <section id="match">
+    <h2>Match details</h2>
+    <div class="row">
+      <div class="field"><label>Competition</label><input type="text" id="competitionName" /></div>
+      <div class="field"><label>Date (YYYY-MM-DD)</label><input type="text" id="date" placeholder="YYYY-MM-DD" /></div>
+      <div class="field"><label>Time (HH:MM)</label><input type="text" id="time" placeholder="14:30" /></div>
+      <div class="field"><label>Place / venue</label><input type="text" id="place" /></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Referee 1</label><input type="text" id="referee1" /></div>
+      <div class="field"><label>Referee 2</label><input type="text" id="referee2" /></div>
+    </div>
+  </section>
+
+  <div class="teams-wrap">
+    <div class="team-block team-a" id="team-a-block">
+      <h2>Team A <span class="muted">(L1)</span></h2>
+      <div class="field"><label>Team name</label><input type="text" id="teamAName" placeholder="Team A name" /></div>
+      <div class="sub-section">
+        <h3>Time-outs &amp; team fouls</h3>
+        <div class="row">
+          <div class="field"><label>Time-outs 1st half (0–2)</label><input type="number" id="teamATimeoutsFirstHalf" min="0" max="2" /></div>
+          <div class="field"><label>Time-outs 2nd half (0–3)</label><input type="number" id="teamATimeoutsSecondHalf" min="0" max="3" /></div>
+          <div class="field"><label>Time-outs extra</label><input type="number" id="teamATimeoutsExtraPeriods" min="0" /></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Fouls P1 (0–4)</label><input type="number" id="teamAFoulsPeriod1" min="0" max="4" /></div>
+          <div class="field"><label>Fouls P2 (0–4)</label><input type="number" id="teamAFoulsPeriod2" min="0" max="4" /></div>
+          <div class="field"><label>Fouls P3 (0–4)</label><input type="number" id="teamAFoulsPeriod3" min="0" max="4" /></div>
+          <div class="field"><label>Fouls P4 (0–4)</label><input type="number" id="teamAFoulsPeriod4" min="0" max="4" /></div>
+        </div>
+      </div>
+      <div class="sub-section">
+        <h3>Players <span id="team-a-player-count" class="player-count"></span></h3>
+        <div class="player-table-wrap"><div id="team-a-players-list"></div></div>
+        <button type="button" class="add-player-btn" id="add-team-a-player">Add player</button>
+      </div>
+    </div>
+
+    <div class="team-block team-b" id="team-b-block">
+      <h2>Team B <span class="muted">(L2)</span></h2>
+      <div class="field"><label>Team name</label><input type="text" id="teamBName" placeholder="Team B name" /></div>
+      <div class="sub-section">
+        <h3>Time-outs &amp; team fouls</h3>
+        <div class="row">
+          <div class="field"><label>Time-outs 1st half (0–2)</label><input type="number" id="teamBTimeoutsFirstHalf" min="0" max="2" /></div>
+          <div class="field"><label>Time-outs 2nd half (0–3)</label><input type="number" id="teamBTimeoutsSecondHalf" min="0" max="3" /></div>
+          <div class="field"><label>Time-outs extra</label><input type="number" id="teamBTimeoutsExtraPeriods" min="0" /></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Fouls P1 (0–4)</label><input type="number" id="teamBFoulsPeriod1" min="0" max="4" /></div>
+          <div class="field"><label>Fouls P2 (0–4)</label><input type="number" id="teamBFoulsPeriod2" min="0" max="4" /></div>
+          <div class="field"><label>Fouls P3 (0–4)</label><input type="number" id="teamBFoulsPeriod3" min="0" max="4" /></div>
+          <div class="field"><label>Fouls P4 (0–4)</label><input type="number" id="teamBFoulsPeriod4" min="0" max="4" /></div>
+        </div>
+      </div>
+      <div class="sub-section">
+        <h3>Players <span id="team-b-player-count" class="player-count"></span></h3>
+        <div class="player-table-wrap"><div id="team-b-players-list"></div></div>
+        <button type="button" class="add-player-btn" id="add-team-b-player">Add player</button>
+      </div>
+    </div>
+  </div>
+
+  <section id="running-score">
+    <h2>Running score – analytics</h2>
+    <div class="sub-section">
+      <h3>Period &amp; final scores (editable)</h3>
+      <div class="r1-scores-row">
+        <div class="field"><label>Period 1 (A / B)</label><input type="number" id="r1-p1-a" min="0" /> / <input type="number" id="r1-p1-b" min="0" /></div>
+        <div class="field"><label>Period 2 (A / B)</label><input type="number" id="r1-p2-a" min="0" /> / <input type="number" id="r1-p2-b" min="0" /></div>
+        <div class="field"><label>Period 3 (A / B)</label><input type="number" id="r1-p3-a" min="0" /> / <input type="number" id="r1-p3-b" min="0" /></div>
+        <div class="field"><label>Period 4 (A / B)</label><input type="number" id="r1-p4-a" min="0" /> / <input type="number" id="r1-p4-b" min="0" /></div>
+        <div class="field"><label>Final (A / B)</label><input type="number" id="r1-final-a" min="0" /> / <input type="number" id="r1-final-b" min="0" /></div>
+      </div>
+    </div>
+    <div class="sub-section">
+      <h3>Points by quarter</h3>
+      <div class="r1-view-toggle">
+        <label><input type="radio" name="r1-quarter-view" value="per" checked /> This quarter only</label>
+        <label><input type="radio" name="r1-quarter-view" value="cum" /> Cumulative through quarter</label>
+      </div>
+      <div id="r1-quarter-table-wrap"></div>
+    </div>
+    <div class="sub-section">
+      <h3>Points per player</h3>
+      <p class="r1-muted">Editable. 1pt = free throw, 2pt = two-pointer, 3pt = three-pointer. Total updates automatically. After editing, update period scores and final score above to keep consistency before saving.</p>
+      <div id="r1-player-scoring-wrap"></div>
+      <div id="r1-consistency-wrap" class="r1-consistency"></div>
+    </div>
+    <div class="sub-section" id="r1-crosscheck-section">
+      <h3>R2 / R3 cross-check</h3>
+      <p class="r1-muted">R2 = period scores (points per quarter). R3 = final score + winning team name.</p>
+      <div id="r1-crosscheck-wrap"></div>
+    </div>
+  </section>
+
+  <section class="confirm-bar">
+    <button type="button" id="confirm-save">Confirm &amp; Save</button>
+  </section>
+
+  <div id="save-status" class="save-status"></div>
+
+  <script>
+    const FIELDS = ['teamAName', 'teamBName', 'competitionName', 'date', 'time', 'place', 'referee1', 'referee2',
+      'teamATimeoutsFirstHalf', 'teamATimeoutsSecondHalf', 'teamATimeoutsExtraPeriods',
+      'teamAFoulsPeriod1', 'teamAFoulsPeriod2', 'teamAFoulsPeriod3', 'teamAFoulsPeriod4',
+      'teamBTimeoutsFirstHalf', 'teamBTimeoutsSecondHalf', 'teamBTimeoutsExtraPeriods',
+      'teamBFoulsPeriod1', 'teamBFoulsPeriod2', 'teamBFoulsPeriod3', 'teamBFoulsPeriod4'];
+    const INTEGER_FIELDS = new Set(FIELDS.filter(f => f.includes('Timeouts') || f.includes('Fouls')));
+    const PLAYER_KEYS = ['bipinNo', 'playerInQuarter1', 'playerInQuarter2', 'playerInQuarter3', 'playerInQuarter4', 'playerName', 'kitNo', 'foul1', 'foul2', 'foul3', 'foul4', 'foul5'];
+
+    function defaultPlayer() {
+      const o = {};
+      PLAYER_KEYS.forEach(k => { o[k] = ''; });
+      return o;
+    }
+
+    function normalizePlayerFromApi(p) {
+      const d = defaultPlayer();
+      if (!p || typeof p !== 'object') return d;
+      PLAYER_KEYS.forEach(k => { if (p[k] != null && String(p[k]).trim() !== '') d[k] = String(p[k]).trim(); });
+      return d;
+    }
+
+    let data = {};
+
+    function getData() {
+      return fetch('/api/data').then(r => r.json());
+    }
+
+    function saveData(payload) {
+      return fetch('/api/data', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    }
+
+    function showStatus(msg, isError) {
+      const el = document.getElementById('save-status');
+      el.textContent = msg;
+      el.className = 'save-status ' + (isError ? 'error' : 'saved');
+      clearTimeout(el._t);
+      el._t = setTimeout(() => { el.className = 'save-status'; el.textContent = ''; }, 2000);
+    }
+
+    function doSave() {
+      const totals = getPlayerTotalsByTeam();
+      const finalA = parseInt(String(data.finalScoreTeamA || 0), 10) || 0;
+      const finalB = parseInt(String(data.finalScoreTeamB || 0), 10) || 0;
+      const periodA = data.periodScoresTeamA || [0, 0, 0, 0];
+      const periodB = data.periodScoresTeamB || [0, 0, 0, 0];
+      const sumPeriodA = periodA[0] + periodA[1] + periodA[2] + periodA[3];
+      const sumPeriodB = periodB[0] + periodB[1] + periodB[2] + periodB[3];
+      const mismatch = (totals.teamA !== finalA || totals.teamB !== finalB) || (sumPeriodA !== finalA || sumPeriodB !== finalB);
+      if (mismatch && !window.confirm('Player totals or period scores do not match final score. Update period scores and final above to keep consistency, or save anyway?')) return;
+      const payload = {};
+      FIELDS.forEach(k => {
+        if (INTEGER_FIELDS.has(k)) {
+          const v = data[k];
+          const n = v === '' || v == null ? 0 : parseInt(String(v), 10);
+          payload[k] = Number.isNaN(n) ? 0 : n;
+        } else {
+          payload[k] = (data[k] != null ? String(data[k]) : '').trim();
+        }
+      });
+      payload.teamAPlayers = Array.isArray(data.teamAPlayers) ? data.teamAPlayers : [];
+      payload.teamBPlayers = Array.isArray(data.teamBPlayers) ? data.teamBPlayers : [];
+      payload.runningScoreEvents = Array.isArray(data.runningScoreEvents) ? data.runningScoreEvents : [];
+      payload.periodScoresTeamA = Array.isArray(data.periodScoresTeamA) ? data.periodScoresTeamA.slice(0, 4) : [0, 0, 0, 0];
+      payload.periodScoresTeamB = Array.isArray(data.periodScoresTeamB) ? data.periodScoresTeamB.slice(0, 4) : [0, 0, 0, 0];
+      payload.finalScoreTeamA = finalA;
+      payload.finalScoreTeamB = finalB;
+      payload.pointsPerColumn = data.pointsPerColumn === 60 ? 60 : 40;
+      payload.r2PeriodScoresTeamA = Array.isArray(data.r2PeriodScoresTeamA) ? data.r2PeriodScoresTeamA.slice(0, 4) : [0, 0, 0, 0];
+      payload.r2PeriodScoresTeamB = Array.isArray(data.r2PeriodScoresTeamB) ? data.r2PeriodScoresTeamB.slice(0, 4) : [0, 0, 0, 0];
+      payload.r3FinalScoreTeamA = parseInt(String(data.r3FinalScoreTeamA ?? 0), 10) || 0;
+      payload.r3FinalScoreTeamB = parseInt(String(data.r3FinalScoreTeamB ?? 0), 10) || 0;
+      payload.r3WinningTeamName = (data.r3WinningTeamName != null ? String(data.r3WinningTeamName) : '').trim();
+      payload.playerScoringOverrides = data.playerScoringOverrides && typeof data.playerScoringOverrides === 'object' ? data.playerScoringOverrides : { A: {}, B: {} };
+      saveData(payload).then(() => showStatus('Saved')).catch(e => showStatus('Save failed: ' + e.message, true));
+    }
+
+    function bindInput(id, getter, setter) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const isNum = el.type === 'number';
+      el.value = isNum ? (getter() === '' ? '' : Number(getter())) : getter();
+      el.addEventListener('input', () => setter(el.value));
+      el.addEventListener('change', () => setter(el.value));
+    }
+
+    function quartersPlayedList(p) {
+      const q = ['playerInQuarter1', 'playerInQuarter2', 'playerInQuarter3', 'playerInQuarter4'];
+      const played = q.map((k, i) => (p[k] && String(p[k]).trim()) ? (i + 1) : null).filter(Boolean);
+      return played.length ? played.join(', ') : '—';
+    }
+
+    function parseQuartersInput(str) {
+      const s = String(str || '').toUpperCase().replace(/Q/g, '');
+      const nums = s.split(/[\s,]+/).map(n => parseInt(n, 10)).filter(n => n >= 1 && n <= 4);
+      const out = { playerInQuarter1: '', playerInQuarter2: '', playerInQuarter3: '', playerInQuarter4: '' };
+      nums.forEach(n => { out['playerInQuarter' + n] = 'X'; });
+      return out;
+    }
+
+    function foulsList(p) {
+      const f = ['foul1', 'foul2', 'foul3', 'foul4', 'foul5'].map(k => (p[k] && String(p[k]).trim()) || '—');
+      return f.join(', ');
+    }
+
+    function parseFoulsInput(str) {
+      const parts = String(str || '').split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+      const out = ['', '', '', '', ''];
+      parts.slice(0, 5).forEach((v, i) => { out[i] = v; });
+      return out;
+    }
+
+    // Only events for point numbers up to and including the final score total (ignore boxes after game end).
+    function getR1EventsInRange() {
+      const total = (data.finalScoreTeamA || 0) + (data.finalScoreTeamB || 0);
+      const events = data.runningScoreEvents || [];
+      if (total <= 0) return events;
+      return events.filter(e => e.point >= 1 && e.point <= total);
+    }
+
+    function renderR1QuarterTable() {
+      const wrap = document.getElementById('r1-quarter-table-wrap');
+      if (!wrap) return;
+      const periodA = data.periodScoresTeamA || [0, 0, 0, 0];
+      const periodB = data.periodScoresTeamB || [0, 0, 0, 0];
+      const cum = document.querySelector('input[name="r1-quarter-view"]:checked');
+      const isCum = cum && cum.value === 'cum';
+      let a1 = periodA[0], a2 = periodA[1], a3 = periodA[2], a4 = periodA[3];
+      let b1 = periodB[0], b2 = periodB[1], b3 = periodB[2], b4 = periodB[3];
+      if (isCum) {
+        a2 = a1 + a2; a3 = a2 + a3; a4 = a3 + a4;
+        b2 = b1 + b2; b3 = b2 + b3; b4 = b3 + b4;
+      }
+      const rows = [
+        '<tr><th>Q1</th><td class="num">' + a1 + '</td><td class="num">' + b1 + '</td></tr>',
+        '<tr><th>Q2</th><td class="num">' + a2 + '</td><td class="num">' + b2 + '</td></tr>',
+        '<tr><th>Q3</th><td class="num">' + a3 + '</td><td class="num">' + b3 + '</td></tr>',
+        '<tr><th>Q4</th><td class="num">' + a4 + '</td><td class="num">' + b4 + '</td></tr>'
+      ];
+      const teamAName = (data.teamAName || 'Team A').trim() || 'Team A';
+      const teamBName = (data.teamBName || 'Team B').trim() || 'Team B';
+      wrap.innerHTML = '<table class="r1-quarter-table"><thead><tr><th>Quarter</th><th>' + String(teamAName).replace(/</g, '&lt;') + '</th><th>' + String(teamBName).replace(/</g, '&lt;') + '</th></tr></thead><tbody>' + rows.join('') + '</tbody></table>';
+    }
+
+    // Resolve jersey to a roster kit number for the team that scored. Only try misread (e.g. 1/7) if there is no player with that number on that team; then at most one single-digit substitution that matches a roster number.
+    function resolveJerseyToRoster(jersey, rosterKitNos) {
+      const j = String(jersey).trim();
+      if (!j) return j;
+      const roster = new Set((rosterKitNos || []).map(k => String(k).trim()).filter(Boolean));
+      if (roster.has(j)) return j;
+      // Only reinterpret when we cannot find a player with this number on the scoring team.
+      const confusables = { '1': ['7'], '7': ['1'], '6': ['8', '0', '5'], '8': ['6', '3'], '0': ['6'], '3': ['8'], '4': ['9'], '9': ['4'], '5': ['6'] };
+      const candidates = [];
+      for (let i = 0; i < j.length; i++) {
+        const alts = confusables[j[i]];
+        if (alts) for (let a = 0; a < alts.length; a++) {
+          const tryJ = j.slice(0, i) + alts[a] + j.slice(i + 1);
+          if (roster.has(tryJ)) candidates.push(tryJ);
+        }
+      }
+      const uniq = [...new Set(candidates)];
+      if (uniq.length === 1) return uniq[0];
+      return j;
+    }
+
+    function getPlayerScoringOverrides() {
+      const o = data.playerScoringOverrides;
+      if (!o || typeof o !== 'object') return { A: {}, B: {} };
+      return { A: o.A && typeof o.A === 'object' ? o.A : {}, B: o.B && typeof o.B === 'object' ? o.B : {} };
+    }
+
+    function getStatsForPlayer(team, jersey, byTeamJersey, overrides) {
+      const ov = overrides[team] && overrides[team][jersey];
+      if (ov && (ov.p1 != null || ov.p2 != null || ov.p3 != null)) {
+        return { p1: parseInt(ov.p1, 10) || 0, p2: parseInt(ov.p2, 10) || 0, p3: parseInt(ov.p3, 10) || 0 };
+      }
+      return byTeamJersey[team][jersey] || { p1: 0, p2: 0, p3: 0 };
+    }
+
+    function setPlayerScoringOverride(team, jersey, p1, p2, p3) {
+      data.playerScoringOverrides = data.playerScoringOverrides || { A: {}, B: {} };
+      if (!data.playerScoringOverrides[team]) data.playerScoringOverrides[team] = {};
+      data.playerScoringOverrides[team][jersey] = { p1: p1, p2: p2, p3: p3 };
+    }
+
+    function getPlayerTotalsByTeam() {
+      const overrides = getPlayerScoringOverrides();
+      const events = getR1EventsInRange();
+      const playersA = data.teamAPlayers || [];
+      const playersB = data.teamBPlayers || [];
+      const kitNosA = playersA.map(p => p.kitNo).filter(Boolean);
+      const kitNosB = playersB.map(p => p.kitNo).filter(Boolean);
+      const byTeamJersey = { A: {}, B: {} };
+      events.forEach(e => {
+        const team = (e.team === 'B' || String(e.team).toUpperCase() === 'B') ? 'B' : 'A';
+        let jersey = String(e.jersey != null ? e.jersey : '').trim();
+        if (!jersey) return;
+        jersey = team === 'A' ? resolveJerseyToRoster(jersey, kitNosA) : resolveJerseyToRoster(jersey, kitNosB);
+        const type = String(e.type || '').trim();
+        if (!byTeamJersey[team][jersey]) byTeamJersey[team][jersey] = { p1: 0, p2: 0, p3: 0 };
+        if (type === '1') byTeamJersey[team][jersey].p1 += 1;
+        else if (type === '2') byTeamJersey[team][jersey].p2 += 1;
+        else if (type === '3') byTeamJersey[team][jersey].p3 += 1;
+      });
+      let sumA = 0, sumB = 0;
+      ['A', 'B'].forEach(team => {
+        const players = team === 'A' ? playersA : playersB;
+        const by = byTeamJersey[team];
+        players.forEach(p => {
+          const jersey = String(p.kitNo != null ? p.kitNo : '').trim();
+          if (!jersey) return;
+          const stats = getStatsForPlayer(team, jersey, byTeamJersey, overrides);
+          const t = (stats.p1 || 0) + (stats.p2 || 0) * 2 + (stats.p3 || 0) * 3;
+          if (team === 'A') sumA += t; else sumB += t;
+        });
+        Object.keys(by || {}).forEach(jersey => {
+          if (team === 'A' && playersA.some(p => String(p.kitNo || '').trim() === jersey)) return;
+          if (team === 'B' && playersB.some(p => String(p.kitNo || '').trim() === jersey)) return;
+          const stats = getStatsForPlayer(team, jersey, byTeamJersey, overrides);
+          const t = (stats.p1 || 0) + (stats.p2 || 0) * 2 + (stats.p3 || 0) * 3;
+          if (team === 'A') sumA += t; else sumB += t;
+        });
+      });
+      return { teamA: sumA, teamB: sumB };
+    }
+
+    function renderConsistencyWarning() {
+      const wrap = document.getElementById('r1-consistency-wrap');
+      if (!wrap) return;
+      const totals = getPlayerTotalsByTeam();
+      const finalA = data.finalScoreTeamA || 0;
+      const finalB = data.finalScoreTeamB || 0;
+      const periodA = data.periodScoresTeamA || [0, 0, 0, 0];
+      const periodB = data.periodScoresTeamB || [0, 0, 0, 0];
+      const sumPeriodA = periodA[0] + periodA[1] + periodA[2] + periodA[3];
+      const sumPeriodB = periodB[0] + periodB[1] + periodB[2] + periodB[3];
+      const matchFinal = (totals.teamA === finalA && totals.teamB === finalB);
+      const matchPeriod = (sumPeriodA === finalA && sumPeriodB === finalB);
+      let msg = 'Player totals: Team A ' + totals.teamA + ', Team B ' + totals.teamB + '. Final score: ' + finalA + '-' + finalB + '. ';
+      if (matchFinal && matchPeriod) {
+        wrap.className = 'r1-consistency ok';
+        msg += 'Period totals match final.';
+      } else {
+        wrap.className = 'r1-consistency warn';
+        if (!matchFinal) msg += 'Player totals do not match final score — update period scores and final above before saving. ';
+        if (!matchPeriod) msg += 'Period scores do not sum to final — fix before saving.';
+      }
+      wrap.textContent = msg;
+    }
+
+    function renderR1PlayerScoring() {
+      const wrap = document.getElementById('r1-player-scoring-wrap');
+      if (!wrap) return;
+      const events = getR1EventsInRange();
+      const playersA = data.teamAPlayers || [];
+      const playersB = data.teamBPlayers || [];
+      const kitNosA = playersA.map(p => p.kitNo).filter(Boolean);
+      const kitNosB = playersB.map(p => p.kitNo).filter(Boolean);
+      const byTeamJersey = { A: {}, B: {} };
+      events.forEach(e => {
+        const team = (e.team === 'B' || String(e.team).toUpperCase() === 'B') ? 'B' : 'A';
+        let jersey = String(e.jersey != null ? e.jersey : '').trim();
+        if (!jersey) return;
+        jersey = team === 'A' ? resolveJerseyToRoster(jersey, kitNosA) : resolveJerseyToRoster(jersey, kitNosB);
+        const type = String(e.type || '').trim();
+        const key = jersey;
+        if (!byTeamJersey[team][key]) byTeamJersey[team][key] = { p1: 0, p2: 0, p3: 0 };
+        if (type === '1') byTeamJersey[team][key].p1 += 1;
+        else if (type === '2') byTeamJersey[team][key].p2 += 1;
+        else if (type === '3') byTeamJersey[team][key].p3 += 1;
+      });
+      const overrides = getPlayerScoringOverrides();
+      function row(teamKey, jersey, name, stats) {
+        const p1 = stats.p1 || 0, p2 = stats.p2 || 0, p3 = stats.p3 || 0;
+        const total = p1 + p2 * 2 + p3 * 3;
+        const esc = (v) => (v != null ? String(v) : '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        return '<tr data-team="' + teamKey + '" data-jersey="' + esc(jersey) + '"><td>' + esc(name || ('#' + jersey)) + '</td><td class="num">' + jersey + '</td><td class="num"><input type="number" class="player-pts" data-pt="1" min="0" value="' + p1 + '" /></td><td class="num"><input type="number" class="player-pts" data-pt="2" min="0" value="' + p2 + '" /></td><td class="num"><input type="number" class="player-pts" data-pt="3" min="0" value="' + p3 + '" /></td><td class="num"><strong class="player-total">' + total + '</strong></td></tr>';
+      }
+      const teamAName = (data.teamAName || 'Team A').trim() || 'Team A';
+      const teamBName = (data.teamBName || 'Team B').trim() || 'Team B';
+      const seenA = new Set();
+      const seenB = new Set();
+      let tbodyA = '';
+      playersA.forEach(p => {
+        const jersey = String(p.kitNo != null ? p.kitNo : '').trim();
+        if (!jersey) return;
+        const stats = getStatsForPlayer('A', jersey, byTeamJersey, overrides);
+        seenA.add(jersey);
+        tbodyA += row('A', jersey, p.playerName, stats);
+      });
+      Object.keys(byTeamJersey.A).forEach(jersey => {
+        if (seenA.has(jersey)) return;
+        tbodyA += row('A', jersey, null, byTeamJersey.A[jersey]);
+      });
+      let tbodyB = '';
+      playersB.forEach(p => {
+        const jersey = String(p.kitNo != null ? p.kitNo : '').trim();
+        if (!jersey) return;
+        const stats = getStatsForPlayer('B', jersey, byTeamJersey, overrides);
+        seenB.add(jersey);
+        tbodyB += row('B', jersey, p.playerName, stats);
+      });
+      Object.keys(byTeamJersey.B).forEach(jersey => {
+        if (seenB.has(jersey)) return;
+        tbodyB += row('B', jersey, null, byTeamJersey.B[jersey]);
+      });
+      const esc = (v) => (v != null ? String(v) : '').replace(/</g, '&lt;');
+      wrap.innerHTML =
+        '<div class="r1-player-section"><h4>' + esc(teamAName) + '</h4><table class="r1-player-table"><thead><tr><th>Player</th><th>#</th><th class="num">1pt</th><th class="num">2pt</th><th class="num">3pt</th><th class="num">Total</th></tr></thead><tbody>' + (tbodyA || '<tr><td colspan="6">No scoring data</td></tr>') + '</tbody></table></div>' +
+        '<div class="r1-player-section"><h4>' + esc(teamBName) + '</h4><table class="r1-player-table"><thead><tr><th>Player</th><th>#</th><th class="num">1pt</th><th class="num">2pt</th><th class="num">3pt</th><th class="num">Total</th></tr></thead><tbody>' + (tbodyB || '<tr><td colspan="6">No scoring data</td></tr>') + '</tbody></table></div>';
+      wrap.querySelectorAll('input.player-pts').forEach(inp => {
+        inp.addEventListener('input', updatePlayerRowTotal);
+        inp.addEventListener('change', updatePlayerRowTotal);
+      });
+      renderConsistencyWarning();
+    }
+
+    function updatePlayerRowTotal() {
+      const row = this.closest('tr');
+      if (!row || !row.dataset.team || !row.dataset.jersey) return;
+      const team = row.dataset.team;
+      const jersey = row.dataset.jersey;
+      const p1Inp = row.querySelector('input[data-pt="1"]');
+      const p2Inp = row.querySelector('input[data-pt="2"]');
+      const p3Inp = row.querySelector('input[data-pt="3"]');
+      const totalEl = row.querySelector('.player-total');
+      const p1 = parseInt(p1Inp && p1Inp.value, 10) || 0;
+      const p2 = parseInt(p2Inp && p2Inp.value, 10) || 0;
+      const p3 = parseInt(p3Inp && p3Inp.value, 10) || 0;
+      if (totalEl) totalEl.textContent = p1 + p2 * 2 + p3 * 3;
+      setPlayerScoringOverride(team, jersey, p1, p2, p3);
+      renderConsistencyWarning();
+    }
+
+    function renderR1CrossCheck() {
+      const wrap = document.getElementById('r1-crosscheck-wrap');
+      if (!wrap) return;
+      const periodA = data.periodScoresTeamA || [0, 0, 0, 0];
+      const periodB = data.periodScoresTeamB || [0, 0, 0, 0];
+      const finalA = data.finalScoreTeamA || 0;
+      const finalB = data.finalScoreTeamB || 0;
+      const r2A = data.r2PeriodScoresTeamA || [];
+      const r2B = data.r2PeriodScoresTeamB || [];
+      const r3A = data.r3FinalScoreTeamA ?? 0;
+      const r3B = data.r3FinalScoreTeamB ?? 0;
+      const winningName = (data.r3WinningTeamName || '').trim();
+      const parts = [];
+      let ok = true;
+      if (r2A.length >= 4 || r2B.length >= 4) {
+        let r2Match = true;
+        for (let i = 0; i < 4; i++) {
+          if (r2A[i] !== undefined && periodA[i] !== r2A[i]) { parts.push('R2 Team A Q' + (i + 1) + ': sheet=' + periodA[i] + ', R2=' + r2A[i]); r2Match = false; ok = false; }
+          if (r2B[i] !== undefined && periodB[i] !== r2B[i]) { parts.push('R2 Team B Q' + (i + 1) + ': sheet=' + periodB[i] + ', R2=' + r2B[i]); r2Match = false; ok = false; }
+        }
+        if (r2Match) parts.push('R2 (period scores): match');
+      }
+      if (r3A > 0 || r3B > 0) {
+        let r3Match = true;
+        if (r3A !== finalA || r3B !== finalB) {
+          parts.push('R3 (final): sheet ' + finalA + '-' + finalB + ', R3 ' + r3A + '-' + r3B);
+          r3Match = false;
+          ok = false;
+        }
+        if (r3Match) parts.push('R3 (final): match');
+      }
+      if (parts.length === 0) parts.push('R2/R3 not in data (optional on sheet).');
+      if (winningName) parts.push('Winning team (R3): ' + String(winningName).replace(/</g, '&lt;'));
+      wrap.innerHTML = '<p class="r1-crosscheck-msg ' + (ok ? 'r1-crosscheck-ok' : 'r1-crosscheck-mismatch') + '">' + parts.join('. ') + '</p>';
+    }
+
+    function bindR1Inputs() {
+      const periodA = data.periodScoresTeamA || [0, 0, 0, 0];
+      const periodB = data.periodScoresTeamB || [0, 0, 0, 0];
+      function refreshR1() { renderR1QuarterTable(); renderR1PlayerScoring(); renderR1CrossCheck(); if (document.getElementById('r1-consistency-wrap')) renderConsistencyWarning(); }
+      ['r1-p1-a', 'r1-p2-a', 'r1-p3-a', 'r1-p4-a'].forEach((id, i) => {
+        const el = document.getElementById(id);
+        if (el) { el.value = periodA[i] || 0; el.oninput = () => { data.periodScoresTeamA = data.periodScoresTeamA || [0,0,0,0]; data.periodScoresTeamA[i] = parseInt(el.value, 10) || 0; refreshR1(); }; }
+      });
+      ['r1-p1-b', 'r1-p2-b', 'r1-p3-b', 'r1-p4-b'].forEach((id, i) => {
+        const el = document.getElementById(id);
+        if (el) { el.value = periodB[i] || 0; el.oninput = () => { data.periodScoresTeamB = data.periodScoresTeamB || [0,0,0,0]; data.periodScoresTeamB[i] = parseInt(el.value, 10) || 0; refreshR1(); }; }
+      });
+      const fa = document.getElementById('r1-final-a');
+      const fb = document.getElementById('r1-final-b');
+      if (fa) { fa.value = data.finalScoreTeamA || 0; fa.oninput = () => { data.finalScoreTeamA = parseInt(fa.value, 10) || 0; refreshR1(); }; }
+      if (fb) { fb.value = data.finalScoreTeamB || 0; fb.oninput = () => { data.finalScoreTeamB = parseInt(fb.value, 10) || 0; refreshR1(); }; }
+      document.querySelectorAll('input[name="r1-quarter-view"]').forEach(radio => {
+        radio.addEventListener('change', () => renderR1QuarterTable());
+      });
+      refreshR1();
+    }
+
+    function renderPlayerRows(teamKey, listId) {
+      const list = document.getElementById(listId);
+      if (!list) return;
+      const players = data[teamKey] || [];
+      const esc = (v) => (v != null ? String(v) : '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      const quartersValue = (p) => ['playerInQuarter1', 'playerInQuarter2', 'playerInQuarter3', 'playerInQuarter4'].map((k, j) => (p[k] && String(p[k]).trim()) ? (j + 1) : null).filter(Boolean).join(' ');
+      const foulsValue = (p) => ['foul1', 'foul2', 'foul3', 'foul4', 'foul5'].map(k => (p[k] && String(p[k]).trim()) ? p[k] : null).filter(Boolean).join(', ');
+      list.innerHTML = '<table class="roster-table"><thead><tr><th class="col-no">Jersey</th><th class="col-player">Player</th><th class="col-bipin">BIPIN</th><th class="col-quarters">Quarters</th><th class="col-fouls">Fouls</th><th class="col-remove"></th></tr></thead><tbody>' +
+        players.map((p, i) => {
+          return `<tr data-team="${teamKey}" data-index="${i}">
+            <td class="col-no"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="kitNo" value="${esc(p.kitNo)}" placeholder="No." /></td>
+            <td class="col-player"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="playerName" value="${esc(p.playerName)}" placeholder="Name" /></td>
+            <td class="col-bipin"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="bipinNo" value="${esc(p.bipinNo)}" placeholder="PIN" /></td>
+            <td class="col-quarters"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="quarters" value="${esc(quartersValue(p))}" placeholder="1 2 4" title="Quarters played: 1 2 4 or Q1 Q2 Q4" /></td>
+            <td class="col-fouls"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="fouls" value="${esc(foulsValue(p))}" placeholder="P, P2, —" title="P P1 P2 P3 U D T -" /></td>
+            <td class="col-remove"><button type="button" class="remove-player" data-team="${teamKey}" data-index="${i}">×</button></td>
+          </tr>`;
+        }).join('') + '</tbody></table>';
+      list.querySelectorAll('input[data-team][data-index][data-key]').forEach(inp => {
+        const key = inp.dataset.key;
+        const team = inp.dataset.team;
+        const idx = parseInt(inp.dataset.index, 10);
+        if (key === 'quarters') {
+          inp.addEventListener('change', () => {
+            if (!data[team] || !data[team][idx]) return;
+            const parsed = parseQuartersInput(inp.value);
+            Object.keys(parsed).forEach(k => { data[team][idx][k] = parsed[k]; });
+          });
+          inp.addEventListener('input', () => { if (!data[team] || !data[team][idx]) return; const parsed = parseQuartersInput(inp.value); Object.keys(parsed).forEach(k => { data[team][idx][k] = parsed[k]; }); });
+        } else if (key === 'fouls') {
+          inp.addEventListener('change', () => {
+            if (!data[team] || !data[team][idx]) return;
+            const parsed = parseFoulsInput(inp.value);
+            ['foul1', 'foul2', 'foul3', 'foul4', 'foul5'].forEach((k, i) => { data[team][idx][k] = parsed[i] || ''; });
+          });
+          inp.addEventListener('input', () => { if (!data[team] || !data[team][idx]) return; const parsed = parseFoulsInput(inp.value); ['foul1', 'foul2', 'foul3', 'foul4', 'foul5'].forEach((k, i) => { data[team][idx][k] = parsed[i] || ''; }); });
+        } else {
+          inp.addEventListener('input', () => { if (data[team] && data[team][idx]) data[team][idx][key] = inp.value; });
+          inp.addEventListener('change', () => { if (data[team] && data[team][idx]) data[team][idx][key] = inp.value; });
+        }
+      });
+      list.querySelectorAll('.remove-player').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const team = btn.dataset.team;
+          const i = parseInt(btn.dataset.index, 10);
+          if (!data[team]) return;
+          data[team].splice(i, 1);
+          renderPlayerRows(team, team === 'teamAPlayers' ? 'team-a-players-list' : 'team-b-players-list');
+          updateAddPlayerButtons();
+        });
+      });
+    }
+
+    function fillForm() {
+      FIELDS.forEach(k => {
+        bindInput(k, () => (data[k] != null ? data[k] : ''), v => { data[k] = v; });
+      });
+      renderPlayerRows('teamAPlayers', 'team-a-players-list');
+      renderPlayerRows('teamBPlayers', 'team-b-players-list');
+      updateAddPlayerButtons();
+      bindR1Inputs();
+    }
+
+    function load() {
+      getData()
+        .then(d => {
+          if (d && typeof d === 'object') {
+            FIELDS.forEach(k => {
+              if (INTEGER_FIELDS.has(k)) {
+                const v = d[k];
+                const n = v === '' || v == null ? 0 : parseInt(String(v), 10);
+                data[k] = Number.isNaN(n) ? 0 : n;
+              } else {
+                data[k] = d[k] != null ? String(d[k]) : '';
+              }
+            });
+            data.teamAPlayers = Array.isArray(d.teamAPlayers) ? d.teamAPlayers.map(normalizePlayerFromApi) : [];
+            data.teamBPlayers = Array.isArray(d.teamBPlayers) ? d.teamBPlayers.map(normalizePlayerFromApi) : [];
+            data.runningScoreEvents = Array.isArray(d.runningScoreEvents) ? d.runningScoreEvents : [];
+            data.periodScoresTeamA = Array.isArray(d.periodScoresTeamA) && d.periodScoresTeamA.length >= 4 ? d.periodScoresTeamA.slice(0, 4) : [0, 0, 0, 0];
+            data.periodScoresTeamB = Array.isArray(d.periodScoresTeamB) && d.periodScoresTeamB.length >= 4 ? d.periodScoresTeamB.slice(0, 4) : [0, 0, 0, 0];
+            data.finalScoreTeamA = typeof d.finalScoreTeamA === 'number' ? d.finalScoreTeamA : parseInt(String(d.finalScoreTeamA || 0), 10) || 0;
+            data.finalScoreTeamB = typeof d.finalScoreTeamB === 'number' ? d.finalScoreTeamB : parseInt(String(d.finalScoreTeamB || 0), 10) || 0;
+            data.pointsPerColumn = d.pointsPerColumn === 60 ? 60 : 40;
+            data.r2PeriodScoresTeamA = Array.isArray(d.r2PeriodScoresTeamA) && d.r2PeriodScoresTeamA.length >= 4 ? d.r2PeriodScoresTeamA.slice(0, 4) : [0, 0, 0, 0];
+            data.r2PeriodScoresTeamB = Array.isArray(d.r2PeriodScoresTeamB) && d.r2PeriodScoresTeamB.length >= 4 ? d.r2PeriodScoresTeamB.slice(0, 4) : [0, 0, 0, 0];
+            data.r3FinalScoreTeamA = typeof d.r3FinalScoreTeamA === 'number' ? d.r3FinalScoreTeamA : parseInt(String(d.r3FinalScoreTeamA || 0), 10) || 0;
+            data.r3FinalScoreTeamB = typeof d.r3FinalScoreTeamB === 'number' ? d.r3FinalScoreTeamB : parseInt(String(d.r3FinalScoreTeamB || 0), 10) || 0;
+            data.r3WinningTeamName = (d.r3WinningTeamName != null ? String(d.r3WinningTeamName) : '').trim();
+            data.playerScoringOverrides = (d.playerScoringOverrides && typeof d.playerScoringOverrides === 'object') ? d.playerScoringOverrides : { A: {}, B: {} };
+          }
+          fillForm();
+        })
+        .catch(e => {
+          document.body.insertAdjacentHTML('afterbegin', '<p style="background:#f85149;color:#fff;padding:12px;margin:0 0 16px;">Load failed. Open <strong>http://localhost:3000</strong> and run <code>npm start</code>.</p>');
+          showStatus('Load failed: ' + e.message, true);
+        });
+    }
+
+    document.getElementById('confirm-save').addEventListener('click', doSave);
+    const MAX_PLAYERS_PER_TEAM = 12;
+
+    function updateAddPlayerButtons() {
+      const a = (data.teamAPlayers || []).length;
+      const b = (data.teamBPlayers || []).length;
+      const btnA = document.getElementById('add-team-a-player');
+      const btnB = document.getElementById('add-team-b-player');
+      const countA = document.getElementById('team-a-player-count');
+      const countB = document.getElementById('team-b-player-count');
+      if (countA) countA.textContent = `(${a}/${MAX_PLAYERS_PER_TEAM})`;
+      if (countB) countB.textContent = `(${b}/${MAX_PLAYERS_PER_TEAM})`;
+      btnA.disabled = a >= MAX_PLAYERS_PER_TEAM;
+      btnA.textContent = a >= MAX_PLAYERS_PER_TEAM ? `Add player (${MAX_PLAYERS_PER_TEAM}/${MAX_PLAYERS_PER_TEAM})` : 'Add player';
+      btnB.disabled = b >= MAX_PLAYERS_PER_TEAM;
+      btnB.textContent = b >= MAX_PLAYERS_PER_TEAM ? `Add player (${MAX_PLAYERS_PER_TEAM}/${MAX_PLAYERS_PER_TEAM})` : 'Add player';
+    }
+
+    document.getElementById('add-team-a-player').addEventListener('click', () => {
+      data.teamAPlayers = data.teamAPlayers || [];
+      if (data.teamAPlayers.length >= MAX_PLAYERS_PER_TEAM) return;
+      data.teamAPlayers.push(defaultPlayer());
+      renderPlayerRows('teamAPlayers', 'team-a-players-list');
+      updateAddPlayerButtons();
+    });
+    document.getElementById('add-team-b-player').addEventListener('click', () => {
+      data.teamBPlayers = data.teamBPlayers || [];
+      if (data.teamBPlayers.length >= MAX_PLAYERS_PER_TEAM) return;
+      data.teamBPlayers.push(defaultPlayer());
+      renderPlayerRows('teamBPlayers', 'team-b-players-list');
+      updateAddPlayerButtons();
+    });
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', load);
+    } else {
+      load();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Prevent committing .env or other secret files (API keys).
+# Install: cp scripts/pre-commit.hook .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+if git diff --cached --name-only | grep -qE '^\.env$|^\.env\.'; then
+  echo "ERROR: Refusing to commit .env (contains API keys). Remove it from the commit."
+  exit 1
+fi
+exit 0

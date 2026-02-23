@@ -1,0 +1,20 @@
+# API key and secrets (never commit)
+.env
+.env.*
+!.env.example
+
+# Persisted match data (optional: remove from .gitignore to track)
+data.json
+
+# Uploaded scoresheets
+uploads/
+
+# Last Gemini extraction (for inspection)
+gemini-response.json
+
+# Debug: prompt + image for manual UI comparison
+debug-prompt.txt
+debug-upload.*
+
+# Dependencies
+node_modules/

@@ -1,0 +1,28 @@
+Look at this basketball scoresheet and extract the header information and the player tables (L1 for Team A, L2 for Team B). Type out the actual values you see into the JSON. Do not leave fields empty if you can read the information.
+
+Header layout:
+- Row 1: Team A name, Team B name
+- Row 2: Competition name, date, time
+- Row 3: Place/venue, referee 1 name, referee 2 name (if shown)
+
+Extract the exact text you see for each field. Use date as YYYY-MM-DD and time as HH:MM (24-hour). Fill in every field you can read.
+
+Player tables (below the header):
+- L1 = Team A players, L2 = Team B players. Each row is one player.
+- Columns (left to right): BIPIN No. (Basketball Ireland PIN), Player In (4 boxes for quarters 1–4), Player Name, Kit No., Fouls (5 boxes).
+- Player In: X, slash (/), or backslash (\) in a box = player played that quarter; empty box = did not play. If all four boxes are empty, treat as not filled out by scorekeeper (not “no play”). Scorekeepers often mark only starters.
+- Player names: use the exact format on the sheet.
+- Fouls (5 boxes per player): Record the letter/code in each box. P = personal (no free throws); P1, P2, P3 = personal with 1/2/3 free throws for fouled player; U = unsportsmanlike; D = disqualifying; T = technical. Horizontal line (-) = foul not committed by end of game. Empty = blank. Fifth foul = player fouled out and ejected.
+- Return teamAPlayers and teamBPlayers as arrays of objects with keys: bipinNo, playerInQuarter1, playerInQuarter2, playerInQuarter3, playerInQuarter4, playerName, kitNo, foul1, foul2, foul3, foul4, foul5. Use empty string "" for any missing or blank cell.
+
+Running score (R1) – extract every marked point:
+- R1 is the grid on the right: running score through the game. Three main columns (e.g. 1–40, 41–80, 81–120). Within each main column there are four inner columns: Team A jersey | Team A point mark | Team B point mark | Team B jersey.
+- Read the grid from the top down, column by column (inner columns first within each block). For every row (point number 1, 2, 3, … up to 120):
+  - Look at the Team A point column: if there is handwriting (a mark), classify it: a dot (•) or small mark = 1 point (free throw); a slash (/) or backslash (\) = 2 points; a circle (○) around the number = 3 points. The number beside the mark (in the Team A jersey column for that row) is the scorer’s jersey. Emit one runningScoreEvent: point, team "A", type "1"/"2"/"3", jersey.
+  - Look at the Team B point column: same rule. Dot = 1 pt, slash or backslash = 2 pt, circle = 3 pt. The number in the Team B jersey column is the scorer. Emit one event: point, team "B", type "1"/"2"/"3", jersey.
+- You must extract every point that has a visible mark. Do not leave runningScoreEvents empty if the grid has any readable marks. Work through each box systematically from top to bottom.
+- Jersey number: record the digit(s) written beside the mark exactly as you read them. Do not reinterpret or correct numbers during extraction—output the jersey as written.
+- Return runningScoreEvents: array of objects, one per marked point, each { point (1–120), team ("A" or "B"), type ("1" or "2" or "3"), jersey (string, e.g. "7") }. Sort by point ascending.
+- If the "Scores" or "Period Scores" section is visible at the bottom, return periodScoresTeamA, periodScoresTeamB (arrays of 4 numbers), finalScoreTeamA, finalScoreTeamB.
+- R2 – Period Scores: R2 contains the scores at the end of each period. It is only the points scored during that period, NOT the running total. Return r2PeriodScoresTeamA and r2PeriodScoresTeamB as arrays of 4 numbers (points in period 1, 2, 3, 4 for each team). Omit or empty if R2 not on sheet.
+- R3 – Final: R3 contains the total final score (including all periods and extra periods). It also has the name of the winning team written underneath. Return r3FinalScoreTeamA, r3FinalScoreTeamB (integers), and r3WinningTeamName (string; the winning team name as shown). Omit or empty if R3 not on sheet.

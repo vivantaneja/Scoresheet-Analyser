@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scoresheet Analyser</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --border: #2d3a4d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --home: #3fb950;
+      --away: #f85149;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'SF Mono', 'Consolas', monospace;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 24px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      line-height: 1.5;
+    }
+    h1 { font-size: 1.5rem; margin: 0 0 8px; color: var(--text); }
+    .tagline { color: var(--muted); font-size: 0.9rem; margin-bottom: 32px; }
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 48px 40px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      max-width: 420px;
+      width: 100%;
+    }
+    .dropzone:hover, .dropzone.dragover { border-color: var(--accent); background: rgba(88, 166, 255, 0.06); }
+    .dropzone .dropzone-text { color: var(--text); font-size: 1rem; margin-bottom: 6px; }
+    .dropzone .dropzone-hint { color: var(--muted); font-size: 0.8rem; }
+    .dropzone input[type="file"] { display: none; }
+    .dropzone-upload-status { margin-top: 16px; font-size: 0.85rem; min-height: 1.2em; }
+    .dropzone-upload-status.success { color: var(--home); }
+    .dropzone-upload-status.error { color: var(--away); }
+    .btn {
+      display: inline-block;
+      margin-top: 20px;
+      padding: 12px 24px;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 6px;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .btn:hover { filter: brightness(1.1); }
+    .btn.hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h1>Scoresheet Analyser</h1>
+  <p class="tagline">Upload a scoresheet to extract and review stats</p>
+
+  <section id="upload" class="dropzone" role="button" tabindex="0">
+    <div class="dropzone-text">Drop your scoresheet here or click to browse</div>
+    <div class="dropzone-hint">Any file type (PDF, image, document, etc.)</div>
+    <input type="file" id="scoresheet-file" accept="*/*" />
+    <div id="upload-status" class="dropzone-upload-status" aria-live="polite"></div>
+    <a href="review.html" id="go-review" class="btn hidden">Review stats →</a>
+  </section>
+
+  <script>
+    (function initDropzone() {
+      const dropzone = document.getElementById('upload');
+      const fileInput = document.getElementById('scoresheet-file');
+      const statusEl = document.getElementById('upload-status');
+      const goReview = document.getElementById('go-review');
+      function setStatus(msg, isError) {
+        statusEl.textContent = msg || '';
+        statusEl.className = 'dropzone-upload-status' + (isError ? ' error' : msg ? ' success' : '');
+      }
+      function uploadFile(file) {
+        if (!file) return;
+        setStatus('Uploading…');
+        goReview.classList.add('hidden');
+        const form = new FormData();
+        form.append('scoresheet', file);
+        fetch('/api/upload', { method: 'POST', body: form })
+          .then(r => {
+            return r.json().then(d => ({ ok: r.ok, status: r.status, data: d }));
+          })
+          .then(({ ok, status, data: d }) => {
+            if (ok && d && d.ok) {
+              setStatus('Uploaded: ' + (d.filename || 'scoresheet'));
+              goReview.classList.remove('hidden');
+            } else {
+              const msg = (d && d.error) ? d.error : ('Upload failed (HTTP ' + status + ')');
+              setStatus(msg, true);
+            }
+          })
+          .catch(e => setStatus('Upload failed: ' + (e.message || e), true));
+      }
+      dropzone.addEventListener('click', (e) => {
+        if (e.target.closest('.btn')) return;
+        fileInput.click();
+      });
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files[0]) uploadFile(fileInput.files[0]);
+        fileInput.value = '';
+      });
+      dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+      dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+      dropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file) uploadFile(file);
+      });
+    })();
+  </script>
+</body>
+</html>
