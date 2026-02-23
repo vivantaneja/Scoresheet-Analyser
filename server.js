@@ -356,9 +356,11 @@ app.use(express.json({ limit: '1mb' }));
 
 // Explicit routes so Vercel/serverless serves HTML (static may not see project root)
 const sendHtml = (filename, req, res) => {
-  const p = path.join(__dirname, filename);
+  const dir = IS_VERCEL ? process.cwd() : __dirname;
+  const p = path.join(dir, filename);
   if (fs.existsSync(p)) return res.sendFile(p);
-  res.sendFile(path.join(process.cwd(), filename), (err) => {
+  const fallback = path.join(IS_VERCEL ? __dirname : process.cwd(), filename);
+  res.sendFile(fallback, (err) => {
     if (err) res.status(404).send('Not found');
   });
 };
