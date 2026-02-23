@@ -6,12 +6,14 @@ const multer = require('multer');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
-const PORT = 3000;
-const DATA_FILE = path.join(__dirname, 'data.json');
-const GEMINI_RESPONSE_FILE = path.join(__dirname, 'gemini-response.json');
+const PORT = process.env.PORT || 3000;
+const IS_VERCEL = !!process.env.VERCEL;
+const WORK_DIR = IS_VERCEL ? '/tmp' : __dirname;
+const DATA_FILE = path.join(WORK_DIR, 'data.json');
+const GEMINI_RESPONSE_FILE = path.join(WORK_DIR, 'gemini-response.json');
 const SCHEMA_FILE = path.join(__dirname, 'schema.json');
 const PROMPT_FILE = path.join(__dirname, 'extraction-prompt.txt');
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
+const UPLOAD_DIR = path.join(WORK_DIR, 'uploads');
 
 const DEFAULT_EXTRACTION_PROMPT = 'Extract basketball match header information and return a JSON object with keys: teamAName, teamBName, competitionName, date (YYYY-MM-DD), time (HH:MM), place, referee1, referee2. Use empty string if not found. Return only the JSON.';
 
@@ -444,8 +446,12 @@ app.post('/api/upload', upload.single('scoresheet'), async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  const keySet = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-  console.log(`Server at http://localhost:${PORT}`);
-  console.log('Gemini API key:', keySet ? 'set' : 'NOT SET (set GEMINI_API_KEY in .env)');
-});
+if (!IS_VERCEL) {
+  app.listen(PORT, () => {
+    const keySet = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
+    console.log(`Server at http://localhost:${PORT}`);
+    console.log('Gemini API key:', keySet ? 'set' : 'NOT SET (set GEMINI_API_KEY in .env)');
+  });
+}
+
+module.exports = app;
