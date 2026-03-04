@@ -108,14 +108,25 @@
       const fileInput = document.getElementById('scoresheet-file');
       const statusEl = document.getElementById('upload-status');
       const goReview = document.getElementById('go-review');
+      const statusSteps = ['Uploading…', 'Analysing…', 'Loading…'];
+      let statusTimeouts = [];
       function setStatus(msg, isError) {
         statusEl.textContent = msg || '';
         statusEl.className = 'dropzone-upload-status' + (isError ? ' error' : msg ? ' success' : '');
       }
+      function startStatusSequence() {
+        statusSteps.forEach((msg, i) => {
+          statusTimeouts.push(setTimeout(() => setStatus(msg), i * 15000));
+        });
+      }
+      function stopStatusSequence() {
+        statusTimeouts.forEach(clearTimeout);
+        statusTimeouts = [];
+      }
       function uploadFile(file) {
         if (!file) return;
-        setStatus('Uploading…');
         goReview.classList.add('hidden');
+        startStatusSequence();
         const form = new FormData();
         form.append('scoresheet', file);
         fetch('/api/upload', { method: 'POST', body: form })
@@ -123,6 +134,7 @@
             return r.json().then(d => ({ ok: r.ok, status: r.status, data: d }));
           })
           .then(({ ok, status, data: d }) => {
+            stopStatusSequence();
             if (ok && d && d.ok) {
               setStatus('Uploaded: ' + (d.filename || 'scoresheet'));
               goReview.classList.remove('hidden');
@@ -131,7 +143,10 @@
               setStatus(msg, true);
             }
           })
-          .catch(e => setStatus('Upload failed: ' + (e.message || e), true));
+          .catch(e => {
+            stopStatusSequence();
+            setStatus('Upload failed: ' + (e.message || e), true);
+          });
       }
       dropzone.addEventListener('click', (e) => {
         if (e.target.closest('.btn')) return;
