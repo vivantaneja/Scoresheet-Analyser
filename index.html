@@ -59,6 +59,11 @@
       color: var(--muted);
       margin-top: 8px;
     }
+    .demo-section .demo-hint a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .demo-section .demo-hint a:hover { text-decoration: underline; }
     .demo-section img {
       border-radius: 8px;
       border: 1px solid var(--border);
@@ -99,7 +104,7 @@
 
   <section class="demo-section">
     <img id="demo-img" src="assets/demo-scoresheet.png" alt="Example scoresheet" draggable="true" />
-    <p class="demo-hint">Drag this image to the dropzone above</p>
+    <p class="demo-hint">Drag this image to the dropzone above, or <a href="assets/demo-scoresheet.png" download="demo-scoresheet.png">download</a></p>
   </section>
 
   <script>
