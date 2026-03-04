@@ -28,6 +28,7 @@
       align-items: center;
       justify-content: center;
       line-height: 1.5;
+      text-align: center;
     }
     h1 { font-size: 1.5rem; margin: 0 0 8px; color: var(--text); }
     .tagline { color: var(--muted); font-size: 0.9rem; margin-bottom: 32px; }
@@ -48,6 +49,24 @@
     .dropzone-upload-status { margin-top: 16px; font-size: 0.85rem; min-height: 1.2em; }
     .dropzone-upload-status.success { color: var(--home); }
     .dropzone-upload-status.error { color: var(--away); }
+    .demo-section {
+      margin-top: 40px;
+      max-width: 420px;
+      width: 100%;
+    }
+    .demo-section h2 {
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin: 0 0 12px;
+      font-weight: 400;
+    }
+    .demo-image {
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      width: 100%;
+      height: auto;
+      display: block;
+    }
     .btn {
       display: inline-block;
       margin-top: 20px;
@@ -71,10 +90,15 @@
 
   <section id="upload" class="dropzone" role="button" tabindex="0">
     <div class="dropzone-text">Drop your scoresheet here or click to browse</div>
-    <div class="dropzone-hint">Any file type (PDF, image, document, etc.)</div>
+    <div class="dropzone-hint">PDF or image (JPEG, PNG, GIF, WebP)</div>
     <input type="file" id="scoresheet-file" accept="*/*" />
     <div id="upload-status" class="dropzone-upload-status" aria-live="polite"></div>
     <a href="review.html" id="go-review" class="btn hidden">Review stats →</a>
+  </section>
+
+  <section class="demo-section">
+    <h2>Example scoresheet</h2>
+    <img src="assets/demo-scoresheet.png" alt="Example basketball scoresheet (Enniscorthy Stealers vs Gorey)" class="demo-image" />
   </section>
 
   <script>
