@@ -59,16 +59,14 @@
       color: var(--muted);
       margin-top: 8px;
     }
-    .demo-section a {
-      display: inline-block;
-    }
     .demo-section img {
       border-radius: 8px;
       border: 1px solid var(--border);
       max-width: 100%;
       height: auto;
-      cursor: pointer;
+      cursor: grab;
     }
+    .demo-section img:active { cursor: grabbing; }
     .demo-section img:hover { opacity: 0.9; }
     .btn {
       display: inline-block;
@@ -100,10 +98,8 @@
   </section>
 
   <section class="demo-section">
-    <a href="assets/demo-scoresheet.png" download="demo-scoresheet.png">
-      <img src="assets/demo-scoresheet.png" alt="Example scoresheet" draggable="true" />
-    </a>
-    <p class="demo-hint">Download, then drag to the dropzone above</p>
+    <img id="demo-img" src="assets/demo-scoresheet.png" alt="Example scoresheet" draggable="true" />
+    <p class="demo-hint">Drag this image to the dropzone above</p>
   </section>
 
   <script>
@@ -145,12 +141,31 @@
         if (fileInput.files[0]) uploadFile(fileInput.files[0]);
         fileInput.value = '';
       });
-      dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+      dropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        dropzone.classList.add('dragover');
+      });
       dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
-      dropzone.addEventListener('drop', (e) => {
+      dropzone.addEventListener('drop', async (e) => {
         e.preventDefault();
         dropzone.classList.remove('dragover');
-        const file = e.dataTransfer.files[0];
+        let file = e.dataTransfer.files[0];
+        if (!file) {
+          const url = (e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '').trim();
+          if (url && (url.includes('demo-scoresheet') || url.startsWith('data:image/'))) {
+            try {
+              const absUrl = url.startsWith('http') || url.startsWith('data:') ? url : new URL(url, window.location.origin).href;
+              const res = await fetch(absUrl);
+              if (!res.ok) throw new Error(res.statusText);
+              const blob = await res.blob();
+              file = new File([blob], 'demo-scoresheet.png', { type: blob.type || 'image/png' });
+            } catch (err) {
+              setStatus('Could not use dropped image: ' + (err.message || err), true);
+              return;
+            }
+          }
+        }
         if (file) uploadFile(file);
       });
     })();
