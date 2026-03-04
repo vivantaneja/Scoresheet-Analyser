@@ -50,23 +50,14 @@
     .dropzone-upload-status.success { color: var(--home); }
     .dropzone-upload-status.error { color: var(--away); }
     .demo-section {
-      margin-top: 40px;
-      max-width: 420px;
-      width: 100%;
+      margin-top: 24px;
     }
-    .demo-section h2 {
-      font-size: 0.9rem;
+    .btn-secondary {
+      background: transparent;
       color: var(--muted);
-      margin: 0 0 12px;
-      font-weight: 400;
-    }
-    .demo-image {
-      border-radius: 8px;
       border: 1px solid var(--border);
-      width: 100%;
-      height: auto;
-      display: block;
     }
+    .btn-secondary:hover { border-color: var(--muted); color: var(--text); }
     .btn {
       display: inline-block;
       margin-top: 20px;
@@ -97,8 +88,7 @@
   </section>
 
   <section class="demo-section">
-    <h2>Example scoresheet</h2>
-    <img src="assets/demo-scoresheet.png" alt="Example basketball scoresheet (Enniscorthy Stealers vs Gorey)" class="demo-image" />
+    <button type="button" id="use-demo" class="btn btn-secondary">Try with example</button>
   </section>
 
   <script>
@@ -147,6 +137,12 @@
         dropzone.classList.remove('dragover');
         const file = e.dataTransfer.files[0];
         if (file) uploadFile(file);
+      });
+      document.getElementById('use-demo').addEventListener('click', () => {
+        fetch('assets/demo-scoresheet.png')
+          .then(r => r.blob())
+          .then(blob => uploadFile(new File([blob], 'demo-scoresheet.png', { type: 'image/png' })))
+          .catch(e => setStatus('Could not load example: ' + (e.message || e), true));
       });
     })();
   </script>
