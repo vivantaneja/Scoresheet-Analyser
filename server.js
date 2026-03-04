@@ -367,6 +367,12 @@ const sendHtml = (filename, req, res) => {
 app.get('/', (req, res) => sendHtml('index.html', req, res));
 app.get('/index.html', (req, res) => sendHtml('index.html', req, res));
 app.get('/review.html', (req, res) => sendHtml('review.html', req, res));
+const demoPath = path.join(__dirname, 'assets', 'demo-scoresheet.png');
+app.get('/assets/demo-scoresheet.png', (req, res) => {
+  const p = fs.existsSync(demoPath) ? demoPath : path.join(process.cwd(), 'assets', 'demo-scoresheet.png');
+  if (fs.existsSync(p)) return res.sendFile(p);
+  res.status(404).send('Not found');
+});
 app.use(express.static(__dirname));
 
 app.get('/api/data', (req, res) => {
