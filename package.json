@@ -4,7 +4,8 @@
   "description": "Editable scoresheet viewer",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node server.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",

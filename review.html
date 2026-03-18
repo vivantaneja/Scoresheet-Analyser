@@ -250,8 +250,8 @@
       <div id="r1-consistency-wrap" class="r1-consistency"></div>
     </div>
     <div class="sub-section" id="r1-crosscheck-section">
-      <h3>R2 / R3 cross-check</h3>
-      <p class="r1-muted">R2 = period scores (points per quarter). R3 = final score + winning team name.</p>
+      <h3>Period scores / Final cross-check</h3>
+      <p class="r1-muted">Period scores = points per quarter. Final = total score + winning team name.</p>
       <div id="r1-crosscheck-wrap"></div>
     </div>
   </section>
@@ -613,22 +613,22 @@
       if (r2A.length >= 4 || r2B.length >= 4) {
         let r2Match = true;
         for (let i = 0; i < 4; i++) {
-          if (r2A[i] !== undefined && periodA[i] !== r2A[i]) { parts.push('R2 Team A Q' + (i + 1) + ': sheet=' + periodA[i] + ', R2=' + r2A[i]); r2Match = false; ok = false; }
-          if (r2B[i] !== undefined && periodB[i] !== r2B[i]) { parts.push('R2 Team B Q' + (i + 1) + ': sheet=' + periodB[i] + ', R2=' + r2B[i]); r2Match = false; ok = false; }
+          if (r2A[i] !== undefined && periodA[i] !== r2A[i]) { parts.push('Period scores Team A Q' + (i + 1) + ': sheet=' + periodA[i] + ', period scores=' + r2A[i]); r2Match = false; ok = false; }
+          if (r2B[i] !== undefined && periodB[i] !== r2B[i]) { parts.push('Period scores Team B Q' + (i + 1) + ': sheet=' + periodB[i] + ', period scores=' + r2B[i]); r2Match = false; ok = false; }
         }
-        if (r2Match) parts.push('R2 (period scores): match');
+        if (r2Match) parts.push('Period scores: match');
       }
       if (r3A > 0 || r3B > 0) {
         let r3Match = true;
         if (r3A !== finalA || r3B !== finalB) {
-          parts.push('R3 (final): sheet ' + finalA + '-' + finalB + ', R3 ' + r3A + '-' + r3B);
+          parts.push('Final: sheet ' + finalA + '-' + finalB + ', final box ' + r3A + '-' + r3B);
           r3Match = false;
           ok = false;
         }
-        if (r3Match) parts.push('R3 (final): match');
+        if (r3Match) parts.push('Final: match');
       }
-      if (parts.length === 0) parts.push('R2/R3 not in data (optional on sheet).');
-      if (winningName) parts.push('Winning team (R3): ' + String(winningName).replace(/</g, '&lt;'));
+      if (parts.length === 0) parts.push('Period scores / final not in data (optional on sheet).');
+      if (winningName) parts.push('Winning team (final): ' + String(winningName).replace(/</g, '&lt;'));
       wrap.innerHTML = '<p class="r1-crosscheck-msg ' + (ok ? 'r1-crosscheck-ok' : 'r1-crosscheck-mismatch') + '">' + parts.join('. ') + '</p>';
     }
 

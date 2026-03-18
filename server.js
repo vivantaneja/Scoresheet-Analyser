@@ -87,6 +87,40 @@ function getMimeType(filePath, originalName) {
   return map[ext] || 'application/octet-stream';
 }
 
+/** Convert JSON Schema (schema.json) to Gemini ResponseSchema format (type, description, properties, items, required only). */
+function getExtractionResponseSchema() {
+  try {
+    const raw = fs.readFileSync(SCHEMA_FILE, 'utf8');
+    const json = JSON.parse(raw);
+    return jsonSchemaToGeminiSchema(json);
+  } catch (e) {
+    return null;
+  }
+}
+
+function jsonSchemaToGeminiSchema(node) {
+  if (!node || typeof node !== 'object') return undefined;
+  const out = {};
+  if (node.type != null) out.type = node.type;
+  if (node.format != null) out.format = node.format;
+  if (node.description != null) out.description = node.description;
+  if (node.nullable != null) out.nullable = node.nullable;
+  if (node.enum != null) out.enum = node.enum;
+  if (node.required != null) out.required = node.required;
+  if (node.properties != null) {
+    out.properties = {};
+    for (const k of Object.keys(node.properties)) {
+      const v = jsonSchemaToGeminiSchema(node.properties[k]);
+      if (v != null) out.properties[k] = v;
+    }
+  }
+  if (node.items != null) {
+    const items = jsonSchemaToGeminiSchema(node.items);
+    if (items != null) out.items = items;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 const EXTRACTION_KEYS = 'teamAName, teamBName, competitionName, date, time, place, referee1, referee2, teamATimeoutsFirstHalf, teamATimeoutsSecondHalf, teamATimeoutsExtraPeriods, teamAFoulsPeriod1, teamAFoulsPeriod2, teamAFoulsPeriod3, teamAFoulsPeriod4, teamBTimeoutsFirstHalf, teamBTimeoutsSecondHalf, teamBTimeoutsExtraPeriods, teamBFoulsPeriod1, teamBFoulsPeriod2, teamBFoulsPeriod3, teamBFoulsPeriod4';
 
 function getExtractionPrompt() {
@@ -302,9 +336,21 @@ async function extractWithGemini(filePath, originalName) {
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const seed = process.env.GEMINI_SEED != null ? parseInt(String(process.env.GEMINI_SEED), 10) : 42;
+  const responseSchema = getExtractionResponseSchema();
+  const generationConfig = {
+    temperature: 0,
+    topP: 0.2,
+    topK: 1,
+    seed: Number.isNaN(seed) ? 42 : seed
+  };
+  if (responseSchema) {
+    generationConfig.responseMimeType = 'application/json';
+    generationConfig.responseSchema = responseSchema;
+  }
   const model = genAI.getGenerativeModel({
     model: modelName,
-    generationConfig: { temperature: 0, topP: 0.2, topK: 10 }
+    generationConfig
   });
 
   const buffer = fs.readFileSync(filePath);
