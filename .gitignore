@@ -18,3 +18,6 @@ debug-upload.*
 
 # Dependencies
 node_modules/
+
+# Cursor IDE (local only; do not commit)
+.cursor/
