@@ -494,8 +494,14 @@ app.post('/api/upload', upload.single('scoresheet'), async (req, res) => {
     } catch (geminiErr) {
       const msg = geminiErr?.message || geminiErr?.toString?.() || 'Extraction failed';
       console.error('Gemini extraction error:', msg);
+      const isTemporaryGemini503 =
+        /\b503\b/.test(msg) &&
+        /(service unavailable|high demand|try again later)/i.test(msg);
+      const userMessage = isTemporaryGemini503
+        ? 'Temporary service issue (503). The AI extraction service is currently overloaded. Please retry in 1-2 minutes. If this keeps happening, try a smaller file or try again later.'
+        : msg;
       return res.status(500).json({
-        error: msg,
+        error: userMessage,
         uploaded: true,
         filename: originalName
       });
