@@ -296,8 +296,35 @@
 
     let data = {};
 
+    const LS_EXTRACT_KEY = 'scoresheetAnalyser:lastExtract';
+
+    function isLikelyExtracted(obj) {
+      if (!obj || typeof obj !== 'object') return false;
+      if (String(obj.teamAName || '').trim() !== '') return true;
+      if (String(obj.teamBName || '').trim() !== '') return true;
+      if (Array.isArray(obj.runningScoreEvents) && obj.runningScoreEvents.length > 0) return true;
+      if (Array.isArray(obj.teamAPlayers) && obj.teamAPlayers.length > 0) return true;
+      if (Array.isArray(obj.teamBPlayers) && obj.teamBPlayers.length > 0) return true;
+      if ((obj.finalScoreTeamA || 0) > 0 || (obj.finalScoreTeamB || 0) > 0) return true;
+      return false;
+    }
+
     function getData() {
       return fetch('/api/data').then(r => r.json());
+    }
+
+    function getDataPreferLocal() {
+      const forceApi = typeof location !== 'undefined' && /[?&]from=api(?:&|$)/.test(location.search);
+      if (!forceApi) {
+        try {
+          const raw = localStorage.getItem(LS_EXTRACT_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (isLikelyExtracted(parsed)) return Promise.resolve(parsed);
+          }
+        } catch (e) {}
+      }
+      return getData();
     }
 
     function saveData(payload) {
@@ -346,7 +373,14 @@
       payload.r3FinalScoreTeamB = parseInt(String(data.r3FinalScoreTeamB ?? 0), 10) || 0;
       payload.r3WinningTeamName = (data.r3WinningTeamName != null ? String(data.r3WinningTeamName) : '').trim();
       payload.playerScoringOverrides = data.playerScoringOverrides && typeof data.playerScoringOverrides === 'object' ? data.playerScoringOverrides : { A: {}, B: {} };
-      saveData(payload).then(() => showStatus('Saved')).catch(e => showStatus('Save failed: ' + e.message, true));
+      saveData(payload)
+        .then(() => {
+          try {
+            localStorage.setItem(LS_EXTRACT_KEY, JSON.stringify(data));
+          } catch (e) {}
+          showStatus('Saved');
+        })
+        .catch(e => showStatus('Save failed: ' + e.message, true));
     }
 
     function bindInput(id, getter, setter) {
@@ -744,7 +778,7 @@
     }
 
     function load() {
-      getData()
+      getDataPreferLocal()
         .then(d => {
           if (d && typeof d === 'object') {
             FIELDS.forEach(k => {

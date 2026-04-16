@@ -141,6 +141,11 @@
           .then(({ ok, status, data: d }) => {
             stopStatusSequence();
             if (ok && d && d.ok) {
+              if (d.data && typeof d.data === 'object') {
+                try {
+                  localStorage.setItem('scoresheetAnalyser:lastExtract', JSON.stringify(d.data));
+                } catch (e) {}
+              }
               setStatus('Uploaded: ' + (d.filename || 'scoresheet'));
               goReview.classList.remove('hidden');
             } else {

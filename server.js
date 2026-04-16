@@ -65,6 +65,12 @@ const DEFAULT_DATA = {
 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
+if (!fs.existsSync(PROMPT_FILE)) {
+  console.warn(
+    'extraction-prompt.txt not found next to server.js; using built-in header-only prompt. Full scoresheet extraction will look empty. Ensure extraction-prompt.txt is deployed (e.g. Vercel includeFiles).'
+  );
+}
+
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, UPLOAD_DIR),
@@ -78,13 +84,28 @@ const MIME_TO_GEMINI = {
   'image/png': 'image/png',
   'image/gif': 'image/gif',
   'image/webp': 'image/webp',
+  'image/heic': 'image/heic',
+  'image/heif': 'image/heif',
   'application/pdf': 'application/pdf'
 };
 
-function getMimeType(filePath, originalName) {
+function getMimeType(filePath, originalName, multerMime) {
   const ext = path.extname(originalName || filePath).toLowerCase().replace(/^\./, '');
-  const map = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf' };
-  return map[ext] || 'application/octet-stream';
+  const map = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    heic: 'image/heic',
+    heif: 'image/heif',
+    pdf: 'application/pdf'
+  };
+  const fromExt = map[ext];
+  if (fromExt) return fromExt;
+  const m = String(multerMime || '').split(';')[0].trim().toLowerCase();
+  if (m && MIME_TO_GEMINI[m]) return m;
+  return 'application/octet-stream';
 }
 
 /** Convert JSON Schema (schema.json) to Gemini ResponseSchema format (type, description, properties, items, required only). */
@@ -402,7 +423,7 @@ function getCandidateModels() {
   });
 }
 
-async function extractWithGemini(filePath, originalName) {
+async function extractWithGemini(filePath, originalName, multerMime) {
   const rawKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   const apiKey = rawKey ? String(rawKey).trim().replace(/^["']|["']$/g, '') : '';
   if (!apiKey) throw new Error('GEMINI_API_KEY (or GOOGLE_API_KEY) not set. Add it to your .env file and restart the server.');
@@ -427,7 +448,7 @@ async function extractWithGemini(filePath, originalName) {
   }
   const buffer = fs.readFileSync(filePath);
   const base64 = buffer.toString('base64');
-  const mimeType = getMimeType(filePath, originalName);
+  const mimeType = getMimeType(filePath, originalName, multerMime);
 
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -588,7 +609,7 @@ app.post('/api/upload', upload.single('scoresheet'), async (req, res) => {
     const originalName = req.file.originalname || '';
     let extracted = null;
     try {
-      extracted = await extractWithGemini(filePath, originalName);
+      extracted = await extractWithGemini(filePath, originalName, req.file.mimetype);
       fs.writeFileSync(DATA_FILE, JSON.stringify(extracted, null, 2), 'utf8');
     } catch (geminiErr) {
       const msg = geminiErr?.message || geminiErr?.toString?.() || 'Extraction failed';
@@ -616,7 +637,8 @@ app.post('/api/upload', upload.single('scoresheet'), async (req, res) => {
       ok: true,
       filename: originalName,
       path: req.file.filename,
-      extracted: true
+      extracted: true,
+      data: extracted
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

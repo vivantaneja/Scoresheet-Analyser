@@ -5,7 +5,7 @@
       "src": "server.js",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": ["*.html", "assets/**"]
+        "includeFiles": ["*.html", "assets/**", "schema.json", "extraction-prompt.txt"]
       }
     }
   ],
