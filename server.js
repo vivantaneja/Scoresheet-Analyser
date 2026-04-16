@@ -329,13 +329,67 @@ function normalizeExtracted(parsed) {
   return out;
 }
 
+function getErrorMessage(err) {
+  return String(err?.message || err?.toString?.() || '');
+}
+
+function parseRetryDelayMs(err) {
+  const msg = getErrorMessage(err);
+  const secondsMatch = msg.match(/retry in\s+([0-9]+(?:\.[0-9]+)?)s/i);
+  if (secondsMatch) {
+    const sec = parseFloat(secondsMatch[1]);
+    if (!Number.isNaN(sec) && sec > 0) return Math.ceil(sec * 1000);
+  }
+  const durationMatch = msg.match(/"retryDelay"\s*:\s*"([0-9]+)s"/i);
+  if (durationMatch) {
+    const sec = parseInt(durationMatch[1], 10);
+    if (!Number.isNaN(sec) && sec > 0) return sec * 1000;
+  }
+  return null;
+}
+
+function isTransientGeminiError(err) {
+  const msg = getErrorMessage(err);
+  const is429 = /\b429\b/.test(msg) || /(too many requests|quota exceeded|rate limit)/i.test(msg);
+  const is503 = /\b503\b/.test(msg) || /(service unavailable|high demand|overloaded|try again later)/i.test(msg);
+  return is429 || is503;
+}
+
+function isModelUnavailableError(err) {
+  const msg = getErrorMessage(err);
+  return /\b404\b/.test(msg) && /(is not found|not supported for generatecontent)/i.test(msg);
+}
+
+function normalizeModelName(name) {
+  const raw = String(name || '').trim();
+  if (!raw) return '';
+  return raw.replace(/^models\//i, '');
+}
+
+function getCandidateModels() {
+  const primary = normalizeModelName(process.env.GEMINI_MODEL || 'gemini-2.5-flash');
+  const envFallbacks = (process.env.GEMINI_MODEL_FALLBACKS || '')
+    .split(',')
+    .map((s) => normalizeModelName(s))
+    .filter(Boolean);
+  // Keep defaults to generally-available v1beta generateContent models.
+  const defaults = ['gemini-2.5-flash-lite', 'gemini-2.0-flash-lite', 'gemini-2.5-flash'];
+  const ordered = [primary, ...envFallbacks, ...defaults];
+  const seen = new Set();
+  return ordered.filter((m) => {
+    if (seen.has(m)) return false;
+    seen.add(m);
+    return true;
+  });
+}
+
 async function extractWithGemini(filePath, originalName) {
   const rawKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   const apiKey = rawKey ? String(rawKey).trim().replace(/^["']|["']$/g, '') : '';
   if (!apiKey) throw new Error('GEMINI_API_KEY (or GOOGLE_API_KEY) not set. Add it to your .env file and restart the server.');
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const modelNames = getCandidateModels();
   const seed = process.env.GEMINI_SEED != null ? parseInt(String(process.env.GEMINI_SEED), 10) : 42;
   const responseSchema = getExtractionResponseSchema();
   const generationConfig = {
@@ -348,19 +402,13 @@ async function extractWithGemini(filePath, originalName) {
     generationConfig.responseMimeType = 'application/json';
     generationConfig.responseSchema = responseSchema;
   }
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    generationConfig
-  });
-
   const buffer = fs.readFileSync(filePath);
   const base64 = buffer.toString('base64');
   const mimeType = getMimeType(filePath, originalName);
 
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  const is429 = (err) => (err?.message || '').includes('429') || (err?.message || '').includes('Too Many Requests') || (err?.message || '').includes('quota');
 
-  async function doExtract() {
+  async function doExtract(model) {
     if (!MIME_TO_GEMINI[mimeType]) {
       const text = buffer.toString('utf8', 0, Math.min(buffer.length, 50000));
       const fullPrompt = getExtractionPrompt();
@@ -387,15 +435,40 @@ async function extractWithGemini(filePath, originalName) {
     return out;
   }
 
-  try {
-    return await doExtract();
-  } catch (err) {
-    if (is429(err)) {
-      await delay(42000);
-      return await doExtract();
+  const maxAttemptsPerModel = 2;
+  let lastErr = null;
+  for (let modelIdx = 0; modelIdx < modelNames.length; modelIdx++) {
+    const modelName = modelNames[modelIdx];
+    const model = genAI.getGenerativeModel({
+      model: modelName,
+      generationConfig
+    });
+    for (let attempt = 1; attempt <= maxAttemptsPerModel; attempt++) {
+      try {
+        if (modelIdx > 0 && attempt === 1) {
+          console.warn(`Gemini fallback: trying model ${modelName}`);
+        }
+        return await doExtract(model);
+      } catch (err) {
+        lastErr = err;
+        if (isModelUnavailableError(err)) {
+          const hasAnotherModel = modelIdx < modelNames.length - 1;
+          if (hasAnotherModel) break;
+          throw err;
+        }
+        if (!isTransientGeminiError(err)) throw err;
+        const isLastTryForModel = attempt === maxAttemptsPerModel;
+        const hasAnotherModel = modelIdx < modelNames.length - 1;
+        if (isLastTryForModel && hasAnotherModel) break;
+        if (isLastTryForModel && !hasAnotherModel) throw err;
+        const parsedDelay = parseRetryDelayMs(err);
+        const backoffMs = Math.min(120000, Math.round(5000 * Math.pow(2, attempt - 1)));
+        const waitMs = parsedDelay != null ? Math.min(parsedDelay + 500, 120000) : backoffMs;
+        await delay(waitMs);
+      }
     }
-    throw err;
   }
+  throw lastErr || new Error('Gemini extraction failed across all configured models.');
 }
 
 app.use(express.json({ limit: '1mb' }));
@@ -497,8 +570,14 @@ app.post('/api/upload', upload.single('scoresheet'), async (req, res) => {
       const isTemporaryGemini503 =
         /\b503\b/.test(msg) &&
         /(service unavailable|high demand|try again later)/i.test(msg);
+      const isGeminiQuota429 =
+        /\b429\b/.test(msg) &&
+        /(too many requests|quota exceeded|rate limit|retry in)/i.test(msg);
+      const retryDelayMs = parseRetryDelayMs(geminiErr);
       const userMessage = isTemporaryGemini503
         ? 'Temporary service issue (503). The AI extraction service is currently overloaded. Please retry in 1-2 minutes. If this keeps happening, try a smaller file or try again later.'
+        : isGeminiQuota429
+        ? `Gemini API quota/rate limit reached (429).${retryDelayMs ? ` Please retry in about ${Math.max(1, Math.ceil(retryDelayMs / 1000))} seconds.` : ' Please retry in about a minute or use a new API key/project with available quota.'}`
         : msg;
       return res.status(500).json({
         error: userMessage,
