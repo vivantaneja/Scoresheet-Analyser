@@ -145,7 +145,12 @@ function getMinimalImagePrompt() {
   try {
     schemaBlock = '\n\nSchema:\n' + fs.readFileSync(SCHEMA_FILE, 'utf8').trim();
   } catch (e) {}
-  return prompt + schemaBlock + '\n\nReturn a single JSON object matching the schema. Use empty string "" for any value not visible. No other text.';
+  return (
+    prompt +
+    schemaBlock +
+    '\n\nReturn a single JSON object matching the schema. Use empty string "" for any value not visible. No other text.' +
+    '\n\nInclude every top-level key from the schema in your JSON. Use [] only for teamAPlayers, teamBPlayers, or runningScoreEvents when those sections are missing or unreadable; if you can read marks or rows, you must populate them. Use 0 for numeric fields only when the value is not shown on the sheet.'
+  );
 }
 
 function parseJsonFromResponse(raw) {
@@ -161,6 +166,20 @@ function parseJsonFromResponse(raw) {
     }
   }
   return {};
+}
+
+/** Prefer SDK text(); fall back to candidate parts if text() throws (e.g. some finish reasons). */
+function getGenerativeText(response) {
+  try {
+    const t = response.text();
+    if (t) return t;
+  } catch (e) {
+    const msg = e?.message || '';
+    if (!/candidates|finish|safety|block/i.test(msg)) console.warn('Gemini response.text() failed:', msg.slice(0, 200));
+  }
+  const parts = response.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts)) return '';
+  return parts.map((p) => (p && typeof p.text === 'string' ? p.text : '')).join('');
 }
 
 function isKeyEcho(key, value) {
@@ -392,14 +411,18 @@ async function extractWithGemini(filePath, originalName) {
   const modelNames = getCandidateModels();
   const seed = process.env.GEMINI_SEED != null ? parseInt(String(process.env.GEMINI_SEED), 10) : 42;
   const responseSchema = getExtractionResponseSchema();
+  const useResponseSchema = /^1|true|yes$/i.test(String(process.env.GEMINI_RESPONSE_SCHEMA || '').trim());
+  const maxOutParsed = parseInt(String(process.env.GEMINI_MAX_OUTPUT_TOKENS || '16384'), 10);
+  const maxOutputTokens = Number.isNaN(maxOutParsed) ? 16384 : Math.min(65536, Math.max(2048, maxOutParsed));
   const generationConfig = {
     temperature: 0,
     topP: 0.2,
     topK: 1,
-    seed: Number.isNaN(seed) ? 42 : seed
+    seed: Number.isNaN(seed) ? 42 : seed,
+    maxOutputTokens,
+    responseMimeType: 'application/json'
   };
-  if (responseSchema) {
-    generationConfig.responseMimeType = 'application/json';
+  if (responseSchema && useResponseSchema) {
     generationConfig.responseSchema = responseSchema;
   }
   const buffer = fs.readFileSync(filePath);
@@ -411,10 +434,13 @@ async function extractWithGemini(filePath, originalName) {
   async function doExtract(model) {
     if (!MIME_TO_GEMINI[mimeType]) {
       const text = buffer.toString('utf8', 0, Math.min(buffer.length, 50000));
-      const fullPrompt = getExtractionPrompt();
-      const result = await model.generateContent([fullPrompt, text]);
+      const fullPrompt =
+        getMinimalImagePrompt() +
+        '\n\nThe scoresheet content may be plain text or OCR-like text below. Extract the full JSON described above from it.\n\n---\n' +
+        text;
+      const result = await model.generateContent(fullPrompt);
       const response = result.response;
-      const raw = (response.text() || '').trim().replace(/^```json?\s*|\s*```$/g, '');
+      const raw = getGenerativeText(response).trim().replace(/^```json?\s*|\s*```$/g, '');
       const parsed = parseJsonFromResponse(raw);
       try { fs.writeFileSync(GEMINI_RESPONSE_FILE, JSON.stringify(parsed, null, 2), 'utf8'); } catch (e) {}
       const out = normalizeExtracted(parsed);
@@ -426,7 +452,7 @@ async function extractWithGemini(filePath, originalName) {
     const imagePart = { inlineData: { mimeType, data: base64 } };
     const result = await model.generateContent([textSent, imagePart]);
     const response = result.response;
-    const raw = (response.text() || '').trim().replace(/^```json?\s*|\s*```$/g, '');
+    const raw = getGenerativeText(response).trim().replace(/^```json?\s*|\s*```$/g, '');
     const parsed = parseJsonFromResponse(raw);
     try { fs.writeFileSync(GEMINI_RESPONSE_FILE, JSON.stringify(parsed, null, 2), 'utf8'); } catch (e) {}
     const out = normalizeExtracted(parsed);
