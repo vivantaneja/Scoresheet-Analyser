@@ -271,11 +271,13 @@
       <div id="r1-player-scoring-wrap"></div>
       <div id="r1-consistency-wrap" class="r1-consistency"></div>
     </div>
+    <!-- TEMP: cross-check (R3 vs final) disabled — restore sub-section + renderR1CrossCheck() when needed
     <div class="sub-section" id="r1-crosscheck-section">
       <h3>Period scores / Final cross-check</h3>
       <p class="r1-muted">Period scores = points per quarter. Final = total score + winning team name.</p>
       <div id="r1-crosscheck-wrap"></div>
     </div>
+    -->
   </section>
 
   <section class="confirm-bar">
@@ -447,6 +449,35 @@
       return '';
     }
 
+    /** Match roster kit "07" to running-score jersey "7" when aggregating player points. */
+    function jerseyStatKey(j) {
+      const t = String(j != null ? j : '').trim();
+      if (!t) return '';
+      if (/^\d+$/.test(t)) return String(parseInt(t, 10));
+      return t;
+    }
+
+    function rosterJerseySet(rosterKitNos) {
+      const set = new Set();
+      (rosterKitNos || []).forEach((k) => {
+        const s = String(k).trim();
+        if (!s) return;
+        set.add(s);
+        if (/^\d+$/.test(s)) set.add(String(parseInt(s, 10)));
+      });
+      return set;
+    }
+
+    /** Align with server normalizeRunningScoreEvent (numeric type, string "1"|"2"|"3"). */
+    function normalizeR1EventShotType(typeRaw) {
+      if (typeof typeRaw === 'number' && typeRaw >= 1 && typeRaw <= 3) return String(Math.trunc(typeRaw));
+      const s = String(typeRaw != null ? typeRaw : '').trim();
+      if (s === '1' || s === '2' || s === '3') return s;
+      const n = parseInt(s, 10);
+      if (!Number.isNaN(n) && n >= 1 && n <= 3) return String(n);
+      return '';
+    }
+
     // Keep events with valid point indices (1–120). Do not cap by finalScoreTeamA+B: that sum is total
     // *points*, while `point` is the scoring-play order / row in the book (often far fewer rows than
     // total points when many baskets are 2s or 3s; capping by points wrongly dropped plays and halved stats.
@@ -486,8 +517,13 @@
     function resolveJerseyToRoster(jersey, rosterKitNos) {
       const j = String(jersey).trim();
       if (!j) return j;
-      const roster = new Set((rosterKitNos || []).map(k => String(k).trim()).filter(Boolean));
-      if (roster.has(j)) return j;
+      const roster = rosterJerseySet(rosterKitNos);
+      if (roster.has(j)) return jerseyStatKey(j) || j;
+      const jNorm = jerseyStatKey(j);
+      if (jNorm && roster.has(jNorm)) return jNorm;
+      for (const k of roster) {
+        if (/^\d+$/.test(String(k)) && jerseyStatKey(k) === jNorm) return jNorm;
+      }
       // Only reinterpret when we cannot find a player with this number on the scoring team.
       const confusables = { '1': ['7'], '7': ['1'], '6': ['8', '0', '5'], '8': ['6', '3'], '0': ['6'], '3': ['8'], '4': ['9'], '9': ['4'], '5': ['6'] };
       const candidates = [];
@@ -495,12 +531,12 @@
         const alts = confusables[j[i]];
         if (alts) for (let a = 0; a < alts.length; a++) {
           const tryJ = j.slice(0, i) + alts[a] + j.slice(i + 1);
-          if (roster.has(tryJ)) candidates.push(tryJ);
+          if (roster.has(tryJ) || roster.has(jerseyStatKey(tryJ))) candidates.push(jerseyStatKey(tryJ) || tryJ);
         }
       }
       const uniq = [...new Set(candidates)];
       if (uniq.length === 1) return uniq[0];
-      return j;
+      return jNorm || j;
     }
 
     function getPlayerScoringOverrides() {
@@ -510,17 +546,33 @@
     }
 
     function getStatsForPlayer(team, jersey, byTeamJersey, overrides) {
-      const ov = overrides[team] && overrides[team][jersey];
-      if (ov && (ov.p1 != null || ov.p2 != null || ov.p3 != null)) {
-        return { p1: parseInt(ov.p1, 10) || 0, p2: parseInt(ov.p2, 10) || 0, p3: parseInt(ov.p3, 10) || 0 };
+      const raw = String(jersey != null ? jersey : '').trim();
+      const keys = [];
+      if (raw) keys.push(raw);
+      const sk = jerseyStatKey(raw);
+      if (sk && sk !== raw) keys.push(sk);
+      const uniqKeys = [...new Set(keys)];
+      for (let i = 0; i < uniqKeys.length; i++) {
+        const k = uniqKeys[i];
+        const ov = overrides[team] && overrides[team][k];
+        if (ov && (ov.p1 != null || ov.p2 != null || ov.p3 != null)) {
+          return { p1: parseInt(ov.p1, 10) || 0, p2: parseInt(ov.p2, 10) || 0, p3: parseInt(ov.p3, 10) || 0 };
+        }
       }
-      return byTeamJersey[team][jersey] || { p1: 0, p2: 0, p3: 0 };
+      for (let i = 0; i < uniqKeys.length; i++) {
+        const k = uniqKeys[i];
+        const s = byTeamJersey[team][k];
+        if (s) return s;
+      }
+      return { p1: 0, p2: 0, p3: 0 };
     }
 
     function setPlayerScoringOverride(team, jersey, p1, p2, p3) {
       data.playerScoringOverrides = data.playerScoringOverrides || { A: {}, B: {} };
       if (!data.playerScoringOverrides[team]) data.playerScoringOverrides[team] = {};
-      data.playerScoringOverrides[team][jersey] = { p1: p1, p2: p2, p3: p3 };
+      const raw = String(jersey != null ? jersey : '').trim();
+      const k = jerseyStatKey(raw) || raw;
+      data.playerScoringOverrides[team][k] = { p1: p1, p2: p2, p3: p3 };
     }
 
     function getPlayerTotalsByTeam() {
@@ -537,11 +589,13 @@
         let jersey = String(e.jersey != null ? e.jersey : '').trim();
         if (!jersey) return;
         jersey = team === 'A' ? resolveJerseyToRoster(jersey, kitNosA) : resolveJerseyToRoster(jersey, kitNosB);
-        const type = String(e.type || '').trim();
-        if (!byTeamJersey[team][jersey]) byTeamJersey[team][jersey] = { p1: 0, p2: 0, p3: 0 };
-        if (type === '1') byTeamJersey[team][jersey].p1 += 1;
-        else if (type === '2') byTeamJersey[team][jersey].p2 += 1;
-        else if (type === '3') byTeamJersey[team][jersey].p3 += 1;
+        const type = normalizeR1EventShotType(e.type);
+        const key = jerseyStatKey(jersey) || jersey;
+        if (!key) return;
+        if (!byTeamJersey[team][key]) byTeamJersey[team][key] = { p1: 0, p2: 0, p3: 0 };
+        if (type === '1') byTeamJersey[team][key].p1 += 1;
+        else if (type === '2') byTeamJersey[team][key].p2 += 1;
+        else if (type === '3') byTeamJersey[team][key].p3 += 1;
       });
       let sumA = 0, sumB = 0;
       ['A', 'B'].forEach(team => {
@@ -555,8 +609,8 @@
           if (team === 'A') sumA += t; else sumB += t;
         });
         Object.keys(by || {}).forEach(jersey => {
-          if (team === 'A' && playersA.some(p => String(p.kitNo || '').trim() === jersey)) return;
-          if (team === 'B' && playersB.some(p => String(p.kitNo || '').trim() === jersey)) return;
+          if (team === 'A' && playersA.some(p => jerseyStatKey(String(p.kitNo || '').trim()) === jerseyStatKey(jersey))) return;
+          if (team === 'B' && playersB.some(p => jerseyStatKey(String(p.kitNo || '').trim()) === jerseyStatKey(jersey))) return;
           const stats = getStatsForPlayer(team, jersey, byTeamJersey, overrides);
           const t = (stats.p1 || 0) + (stats.p2 || 0) * 2 + (stats.p3 || 0) * 3;
           if (team === 'A') sumA += t; else sumB += t;
@@ -607,8 +661,9 @@
         let jersey = String(e.jersey != null ? e.jersey : '').trim();
         if (!jersey) return;
         jersey = team === 'A' ? resolveJerseyToRoster(jersey, kitNosA) : resolveJerseyToRoster(jersey, kitNosB);
-        const type = String(e.type || '').trim();
-        const key = jersey;
+        const type = normalizeR1EventShotType(e.type);
+        const key = jerseyStatKey(jersey) || jersey;
+        if (!key) return;
         if (!byTeamJersey[team][key]) byTeamJersey[team][key] = { p1: 0, p2: 0, p3: 0 };
         if (type === '1') byTeamJersey[team][key].p1 += 1;
         else if (type === '2') byTeamJersey[team][key].p2 += 1;
@@ -630,11 +685,11 @@
         const jersey = String(p.kitNo != null ? p.kitNo : '').trim();
         if (!jersey) return;
         const stats = getStatsForPlayer('A', jersey, byTeamJersey, overrides);
-        seenA.add(jersey);
+        seenA.add(jerseyStatKey(jersey));
         tbodyA += row('A', jersey, p.playerName, stats);
       });
       Object.keys(byTeamJersey.A).forEach(jersey => {
-        if (seenA.has(jersey)) return;
+        if (seenA.has(jerseyStatKey(jersey))) return;
         tbodyA += row('A', jersey, null, byTeamJersey.A[jersey]);
       });
       let tbodyB = '';
@@ -642,11 +697,11 @@
         const jersey = String(p.kitNo != null ? p.kitNo : '').trim();
         if (!jersey) return;
         const stats = getStatsForPlayer('B', jersey, byTeamJersey, overrides);
-        seenB.add(jersey);
+        seenB.add(jerseyStatKey(jersey));
         tbodyB += row('B', jersey, p.playerName, stats);
       });
       Object.keys(byTeamJersey.B).forEach(jersey => {
-        if (seenB.has(jersey)) return;
+        if (seenB.has(jerseyStatKey(jersey))) return;
         tbodyB += row('B', jersey, null, byTeamJersey.B[jersey]);
       });
       const esc = (v) => (v != null ? String(v) : '').replace(/</g, '&lt;');
@@ -677,6 +732,7 @@
       renderConsistencyWarning();
     }
 
+    /* TEMP: cross-check disabled — uncomment function + HTML block + refreshR1 call to restore
     function renderR1CrossCheck() {
       const wrap = document.getElementById('r1-crosscheck-wrap');
       if (!wrap) return;
@@ -709,11 +765,12 @@
           '<ul class="r1-crosscheck-list">' + summaryItems.join('') + '</ul>' +
         '</div>';
     }
+    */
 
     function bindR1Inputs() {
       const periodA = data.periodScoresTeamA || [0, 0, 0, 0];
       const periodB = data.periodScoresTeamB || [0, 0, 0, 0];
-      function refreshR1() { renderR1QuarterTable(); renderR1PlayerScoring(); renderR1CrossCheck(); if (document.getElementById('r1-consistency-wrap')) renderConsistencyWarning(); }
+      function refreshR1() { renderR1QuarterTable(); renderR1PlayerScoring(); /* renderR1CrossCheck(); */ if (document.getElementById('r1-consistency-wrap')) renderConsistencyWarning(); }
       ['r1-p1-a', 'r1-p2-a', 'r1-p3-a', 'r1-p4-a'].forEach((id, i) => {
         const el = document.getElementById(id);
         if (el) { el.value = periodA[i] || 0; el.oninput = () => { data.periodScoresTeamA = data.periodScoresTeamA || [0,0,0,0]; data.periodScoresTeamA[i] = parseInt(el.value, 10) || 0; refreshR1(); }; }
