@@ -15,14 +15,31 @@ Player tables (below the header):
 - Fouls (5 boxes per player): Record the letter/code in each box. P = personal (no free throws); P1, P2, P3 = personal with 1/2/3 free throws for fouled player; U = unsportsmanlike; D = disqualifying; T = technical. Horizontal line (-) = foul not committed by end of game. Empty = blank. Fifth foul = player fouled out and ejected.
 - Return teamAPlayers and teamBPlayers as arrays of objects with keys: bipinNo, playerInQuarter1, playerInQuarter2, playerInQuarter3, playerInQuarter4, playerName, kitNo, foul1, foul2, foul3, foul4, foul5. Use empty string "" for any missing or blank cell.
 
+Team fouls (team foul rows on the sheet, not player personal fouls):
+- Each period has a row of small boxes per team (usually four boxes per period) for **team fouls** recorded in order.
+- **Slash (/) or backslash (\\) in a box = one team foul** for that period; count it toward teamAFoulsPeriod1..4 or teamBFoulsPeriod1..4 (integers 0–4).
+- **Horizontal dash (–) or hyphen (-), or an empty box = no team foul in that slot**. Do **not** count dashes or blanks as fouls. Never treat “-” the same as “/” for team foul totals.
+
 Running score (R1) – extract every marked point:
+
+CRITICAL: L1 / L2 vs Team A / Team B (do not confuse):
+- The player list labelled **L1** on the sheet is **always Team A**. The player list labelled **L2** is **always Team B**. This is fixed for the whole document.
+- In the running score grid, **every** mark that belongs to the **left / L1 / Team A** side of the grid (Team A jersey column + Team A point-type column) must use JSON `"team": "A"` (capital A only).
+- **Every** mark that belongs to the **right / L2 / Team B** side (Team B point-type column + Team B jersey column) must use JSON `"team": "B"` (capital B only).
+- Do **not** use the numbers 1 or 2 alone as team; do **not** output "L1" or "L2" as the team field. Use only the strings "A" or "B".
+
+Grid layout (typical):
 - R1 is the grid on the right: running score through the game. Three main columns (e.g. 1–40, 41–80, 81–120). Within each main column there are four inner columns: Team A jersey | Team A point mark | Team B point mark | Team B jersey.
 - Read the grid from the top down, column by column (inner columns first within each block). For every row (point number 1, 2, 3, … up to 120):
-  - Look at the Team A point column: if there is handwriting (a mark), classify it: a dot (•) or small mark = 1 point (free throw); a slash (/) or backslash (\) = 2 points; a circle (○) around the number = 3 points. The number beside the mark (in the Team A jersey column for that row) is the scorer’s jersey. Emit one runningScoreEvent: point, team "A", type "1"/"2"/"3", jersey.
-  - Look at the Team B point column: same rule. Dot = 1 pt, slash or backslash = 2 pt, circle = 3 pt. The number in the Team B jersey column is the scorer. Emit one event: point, team "B", type "1"/"2"/"3", jersey.
+  - Team A side: if there is a mark in the **Team A point** column, classify it: a dot (•) or small mark = 1 point (free throw); a slash (/) or backslash (\) = 2 points; a circle (○) around the number = 3 points. The jersey for that score is the number in the **Team A jersey** column on that row (same row as the mark). Emit one runningScoreEvent with team exactly "A".
+  - Team B side: if there is a mark in the **Team B point** column, use the same 1/2/3 classification. The jersey is the number in the **Team B jersey** column on that row. Emit one runningScoreEvent with team exactly "B". **You must emit Team B events whenever there is a visible mark on the Team B side**. Do not attribute Team B marks to Team A.
 - You must extract every point that has a visible mark. Do not leave runningScoreEvents empty if the grid has any readable marks. Work through each box systematically from top to bottom.
-- Jersey number: record the digit(s) written beside the mark exactly as you read them. Do not reinterpret or correct numbers during extraction—output the jersey as written.
-- Return runningScoreEvents: array of objects, one per marked point, each { point (1–120), team ("A" or "B"), type ("1" or "2" or "3"), jersey (string, e.g. "7") }. Sort by point ascending.
+- Jersey number: record the digit(s) written beside the mark exactly as you read them. Do not reinterpret or correct numbers during extraction; output the jersey as written.
+- Return runningScoreEvents: array of objects, one per marked point, each { point (1–120), team ("A" or "B" only), type ("1" or "2" or "3"), jersey (string, e.g. "7") }. Sort by point ascending.
+- Field `point` is the **scoring-play sequence** (1st basket or FT of the game = 1, next score = 2, …). It is **not** the running point total for a team and **not** (team A final + team B final). Those totals are much larger than the number of scoring rows when most scores are 2- or 3-pointers.
+- Field `type` must match the mark in the point column: **slash or backslash = "2"** (two points), **small dot = "1"** (one point), **circle around the play = "3"**. Do not default every basket to "1"; that would undercount points by about half in a typical game.
+
+Example (illustrative): {"point": 3, "team": "A", "type": "2", "jersey": "7"} and {"point": 4, "team": "B", "type": "1", "jersey": "12"}.
 - If the "Scores" or "Period Scores" section is visible at the bottom, return periodScoresTeamA, periodScoresTeamB (arrays of 4 numbers), finalScoreTeamA, finalScoreTeamB.
 - R2 – Period Scores: R2 contains the scores at the end of each period. It is only the points scored during that period, NOT the running total. Return r2PeriodScoresTeamA and r2PeriodScoresTeamB as arrays of 4 numbers (points in period 1, 2, 3, 4 for each team). Omit or empty if R2 not on sheet.
 - R3 – Final: R3 contains the total final score (including all periods and extra periods). It also has the name of the winning team written underneath. Return r3FinalScoreTeamA, r3FinalScoreTeamB (integers), and r3WinningTeamName (string; the winning team name as shown). Omit or empty if R3 not on sheet.

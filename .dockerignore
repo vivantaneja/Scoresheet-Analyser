@@ -1,0 +1,8 @@
+node_modules
+.venv
+.git
+.env
+*.md
+__pycache__
+*.pyc
+.DS_Store

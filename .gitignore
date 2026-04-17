@@ -9,7 +9,8 @@ data.json
 # Uploaded scoresheets
 uploads/
 
-# Last Gemini extraction (for inspection)
+# Last Groq extraction parse (for inspection)
+last-extraction.json
 gemini-response.json
 
 # Debug: prompt + image for manual UI comparison
@@ -18,6 +19,12 @@ debug-upload.*
 
 # Dependencies
 node_modules/
+
+# Python (local tooling / legacy; not used by Node server)
+.venv/
+__pycache__/
+*.pyc
+_ocr_test.png
 
 # Cursor IDE (local only; do not commit)
 .cursor/

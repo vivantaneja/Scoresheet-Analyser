@@ -1,16 +1,18 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({
+  path: path.join(__dirname, '.env'),
+  override: true
+});
 const express = require('express');
 const fs = require('fs');
-const path = require('path');
 const multer = require('multer');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const IS_VERCEL = !!process.env.VERCEL;
 const WORK_DIR = IS_VERCEL ? '/tmp' : __dirname;
 const DATA_FILE = path.join(WORK_DIR, 'data.json');
-const GEMINI_RESPONSE_FILE = path.join(WORK_DIR, 'gemini-response.json');
+const EXTRACTION_DEBUG_FILE = path.join(WORK_DIR, 'last-extraction.json');
 const SCHEMA_FILE = path.join(__dirname, 'schema.json');
 const PROMPT_FILE = path.join(__dirname, 'extraction-prompt.txt');
 const UPLOAD_DIR = path.join(WORK_DIR, 'uploads');
@@ -79,15 +81,16 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 }
 });
 
-const MIME_TO_GEMINI = {
-  'image/jpeg': 'image/jpeg',
-  'image/png': 'image/png',
-  'image/gif': 'image/gif',
-  'image/webp': 'image/webp',
-  'image/heic': 'image/heic',
-  'image/heif': 'image/heif',
-  'application/pdf': 'application/pdf'
+/** Groq vision chat API: raster images only (no PDF). */
+const MIME_TO_CHAT_VISION = {
+  'image/jpeg': true,
+  'image/png': true,
+  'image/gif': true,
+  'image/webp': true
 };
+
+const GROQ_CHAT_COMPLETIONS_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_DEFAULT_VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 
 function getMimeType(filePath, originalName, multerMime) {
   const ext = path.extname(originalName || filePath).toLowerCase().replace(/^\./, '');
@@ -104,42 +107,8 @@ function getMimeType(filePath, originalName, multerMime) {
   const fromExt = map[ext];
   if (fromExt) return fromExt;
   const m = String(multerMime || '').split(';')[0].trim().toLowerCase();
-  if (m && MIME_TO_GEMINI[m]) return m;
+  if (m && MIME_TO_CHAT_VISION[m]) return m;
   return 'application/octet-stream';
-}
-
-/** Convert JSON Schema (schema.json) to Gemini ResponseSchema format (type, description, properties, items, required only). */
-function getExtractionResponseSchema() {
-  try {
-    const raw = fs.readFileSync(SCHEMA_FILE, 'utf8');
-    const json = JSON.parse(raw);
-    return jsonSchemaToGeminiSchema(json);
-  } catch (e) {
-    return null;
-  }
-}
-
-function jsonSchemaToGeminiSchema(node) {
-  if (!node || typeof node !== 'object') return undefined;
-  const out = {};
-  if (node.type != null) out.type = node.type;
-  if (node.format != null) out.format = node.format;
-  if (node.description != null) out.description = node.description;
-  if (node.nullable != null) out.nullable = node.nullable;
-  if (node.enum != null) out.enum = node.enum;
-  if (node.required != null) out.required = node.required;
-  if (node.properties != null) {
-    out.properties = {};
-    for (const k of Object.keys(node.properties)) {
-      const v = jsonSchemaToGeminiSchema(node.properties[k]);
-      if (v != null) out.properties[k] = v;
-    }
-  }
-  if (node.items != null) {
-    const items = jsonSchemaToGeminiSchema(node.items);
-    if (items != null) out.items = items;
-  }
-  return Object.keys(out).length ? out : undefined;
 }
 
 const EXTRACTION_KEYS = 'teamAName, teamBName, competitionName, date, time, place, referee1, referee2, teamATimeoutsFirstHalf, teamATimeoutsSecondHalf, teamATimeoutsExtraPeriods, teamAFoulsPeriod1, teamAFoulsPeriod2, teamAFoulsPeriod3, teamAFoulsPeriod4, teamBTimeoutsFirstHalf, teamBTimeoutsSecondHalf, teamBTimeoutsExtraPeriods, teamBFoulsPeriod1, teamBFoulsPeriod2, teamBFoulsPeriod3, teamBFoulsPeriod4';
@@ -189,20 +158,6 @@ function parseJsonFromResponse(raw) {
   return {};
 }
 
-/** Prefer SDK text(); fall back to candidate parts if text() throws (e.g. some finish reasons). */
-function getGenerativeText(response) {
-  try {
-    const t = response.text();
-    if (t) return t;
-  } catch (e) {
-    const msg = e?.message || '';
-    if (!/candidates|finish|safety|block/i.test(msg)) console.warn('Gemini response.text() failed:', msg.slice(0, 200));
-  }
-  const parts = response.candidates?.[0]?.content?.parts;
-  if (!Array.isArray(parts)) return '';
-  return parts.map((p) => (p && typeof p.text === 'string' ? p.text : '')).join('');
-}
-
 function isKeyEcho(key, value) {
   if (value == null || value === '') return true;
   const s = String(value).trim().toLowerCase();
@@ -236,11 +191,95 @@ function normalizePlayerArray(arr) {
   return arr.slice(0, MAX_PLAYERS_PER_TEAM).map(normalizePlayer);
 }
 
+/** Map model output to A/B (L1=L2 roster labels and numeric variants). */
+function normalizeRunningScoreTeam(raw) {
+  if (raw == null || raw === '') return '';
+  if (typeof raw === 'number') {
+    if (raw === 1) return 'A';
+    if (raw === 2) return 'B';
+  }
+  const s = String(raw).trim().toUpperCase();
+  if (s === 'A' || s === 'B') return s;
+  if (s === '1' || s === 'L1' || s === 'LINE 1' || s === 'LINE1') return 'A';
+  if (s === '2' || s === 'L2' || s === 'LINE 2' || s === 'LINE2') return 'B';
+  if (s === 'LEFT') return 'A';
+  if (s === 'RIGHT') return 'B';
+  if (s === 'TEAM A' || s === 'TEAMA' || s === 'TEAM-A' || s === 'TEAM_A') return 'A';
+  if (s === 'TEAM B' || s === 'TEAMB' || s === 'TEAM-B' || s === 'TEAM_B') return 'B';
+  const n = parseInt(s, 10);
+  if (n === 1) return 'A';
+  if (n === 2) return 'B';
+  return '';
+}
+
+const POINT_VALUE = { '1': 1, '2': 2, '3': 3 };
+
+/** When the model assigns every basket to one team but finals need both teams, split events using final scores (subset-sum on 1/2/3 pt values). */
+function repartitionRunningEventsByFinals(events, finalA, finalB) {
+  if (!Array.isArray(events) || events.length === 0) return events;
+  const fa = Math.max(0, parseInt(String(finalA), 10) || 0);
+  const fb = Math.max(0, parseInt(String(finalB), 10) || 0);
+  if (fa + fb === 0) return events;
+  const pts = (e) => POINT_VALUE[String(e.type)] || 0;
+  const sorted = [...events].sort((a, b) => a.point - b.point);
+  const vs = sorted.map(pts);
+  const total = vs.reduce((a, b) => a + b, 0);
+  if (total !== fa + fb) return events;
+
+  const allA = sorted.every((e) => e.team === 'A');
+  const allB = sorted.every((e) => e.team === 'B');
+  if (!allA && !allB) return events;
+  if (allA && fb === 0) return events;
+  if (allB && fa === 0) return events;
+
+  function subsetSumMaskForTeamA(targetForA) {
+    const n = vs.length;
+    const t = targetForA;
+    if (t < 0 || t > total) return null;
+    const dp = Array.from({ length: n + 1 }, () => new Array(t + 1).fill(false));
+    dp[0][0] = true;
+    for (let i = 0; i < n; i++) {
+      for (let s = 0; s <= t; s++) {
+        if (!dp[i][s]) continue;
+        dp[i + 1][s] = true;
+        const ns = s + vs[i];
+        if (ns <= t) dp[i + 1][ns] = true;
+      }
+    }
+    if (!dp[n][targetForA]) return null;
+    let s = targetForA;
+    const inA = new Array(n).fill(false);
+    for (let i = n; i >= 1; i--) {
+      if (dp[i - 1][s]) {
+        continue;
+      }
+      if (s >= vs[i - 1] && dp[i - 1][s - vs[i - 1]]) {
+        inA[i - 1] = true;
+        s -= vs[i - 1];
+      } else {
+        return null;
+      }
+    }
+    return s === 0 ? inA : null;
+  }
+
+  const inA = subsetSumMaskForTeamA(fa);
+  if (!inA) return events;
+  return sorted.map((e, i) => ({ ...e, team: inA[i] ? 'A' : 'B' }));
+}
+
 function normalizeRunningScoreEvent(e) {
   if (!e || typeof e !== 'object') return null;
   const point = parseInt(String(e.point), 10);
-  const team = String(e.team || '').toUpperCase().trim();
-  const type = String(e.type || '').trim();
+  const team = normalizeRunningScoreTeam(e.team);
+  let type =
+    typeof e.type === 'number' && e.type >= 1 && e.type <= 3
+      ? String(Math.trunc(e.type))
+      : String(e.type != null ? e.type : '').trim();
+  if (type !== '1' && type !== '2' && type !== '3') {
+    const tn = parseInt(type, 10);
+    if (!Number.isNaN(tn) && tn >= 1 && tn <= 3) type = String(tn);
+  }
   const jersey = String(e.jersey != null ? e.jersey : '').trim();
   if (Number.isNaN(point) || point < 1 || point > 120) return null;
   if (team !== 'A' && team !== 'B') return null;
@@ -366,6 +405,7 @@ function normalizeExtracted(parsed) {
   out.r3FinalScoreTeamA = Number.isNaN(r3A) || r3A < 0 ? 0 : r3A;
   out.r3FinalScoreTeamB = Number.isNaN(r3B) || r3B < 0 ? 0 : r3B;
   out.r3WinningTeamName = (parsed.r3WinningTeamName != null && String(parsed.r3WinningTeamName).trim() !== '') ? String(parsed.r3WinningTeamName).trim() : (parsed.r3_winning_team_name != null && String(parsed.r3_winning_team_name).trim() !== '') ? String(parsed.r3_winning_team_name).trim() : '';
+  out.runningScoreEvents = repartitionRunningEventsByFinals(out.runningScoreEvents, out.finalScoreTeamA, out.finalScoreTeamB);
   return out;
 }
 
@@ -388,134 +428,96 @@ function parseRetryDelayMs(err) {
   return null;
 }
 
-function isTransientGeminiError(err) {
-  const msg = getErrorMessage(err);
-  const is429 = /\b429\b/.test(msg) || /(too many requests|quota exceeded|rate limit)/i.test(msg);
-  const is503 = /\b503\b/.test(msg) || /(service unavailable|high demand|overloaded|try again later)/i.test(msg);
-  return is429 || is503;
-}
-
-function isModelUnavailableError(err) {
-  const msg = getErrorMessage(err);
-  return /\b404\b/.test(msg) && /(is not found|not supported for generatecontent)/i.test(msg);
-}
-
-function normalizeModelName(name) {
-  const raw = String(name || '').trim();
-  if (!raw) return '';
-  return raw.replace(/^models\//i, '');
-}
-
-function getCandidateModels() {
-  const primary = normalizeModelName(process.env.GEMINI_MODEL || 'gemini-2.5-flash');
-  const envFallbacks = (process.env.GEMINI_MODEL_FALLBACKS || '')
-    .split(',')
-    .map((s) => normalizeModelName(s))
-    .filter(Boolean);
-  // Keep defaults to generally-available v1beta generateContent models.
-  const defaults = ['gemini-2.5-flash-lite', 'gemini-2.0-flash-lite', 'gemini-2.5-flash'];
-  const ordered = [primary, ...envFallbacks, ...defaults];
-  const seen = new Set();
-  return ordered.filter((m) => {
-    if (seen.has(m)) return false;
-    seen.add(m);
-    return true;
-  });
-}
-
-async function extractWithGemini(filePath, originalName, multerMime) {
-  const rawKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  const apiKey = rawKey ? String(rawKey).trim().replace(/^["']|["']$/g, '') : '';
-  if (!apiKey) throw new Error('GEMINI_API_KEY (or GOOGLE_API_KEY) not set. Add it to your .env file and restart the server.');
-
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const modelNames = getCandidateModels();
-  const seed = process.env.GEMINI_SEED != null ? parseInt(String(process.env.GEMINI_SEED), 10) : 42;
-  const responseSchema = getExtractionResponseSchema();
-  const useResponseSchema = /^1|true|yes$/i.test(String(process.env.GEMINI_RESPONSE_SCHEMA || '').trim());
-  const maxOutParsed = parseInt(String(process.env.GEMINI_MAX_OUTPUT_TOKENS || '16384'), 10);
-  const maxOutputTokens = Number.isNaN(maxOutParsed) ? 16384 : Math.min(65536, Math.max(2048, maxOutParsed));
-  const generationConfig = {
-    temperature: 0,
-    topP: 0.2,
-    topK: 1,
-    seed: Number.isNaN(seed) ? 42 : seed,
-    maxOutputTokens,
-    responseMimeType: 'application/json'
-  };
-  if (responseSchema && useResponseSchema) {
-    generationConfig.responseSchema = responseSchema;
-  }
-  const buffer = fs.readFileSync(filePath);
-  const base64 = buffer.toString('base64');
+/**
+ * OpenAI-compatible chat.completions with one user message (text + image data URL). Groq.
+ */
+async function extractWithChatCompletionsVision(filePath, originalName, multerMime, options) {
+  const { url, apiKey, model, extraHeaders = {} } = options;
   const mimeType = getMimeType(filePath, originalName, multerMime);
-
-  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-  async function doExtract(model) {
-    if (!MIME_TO_GEMINI[mimeType]) {
-      const text = buffer.toString('utf8', 0, Math.min(buffer.length, 50000));
-      const fullPrompt =
-        getMinimalImagePrompt() +
-        '\n\nThe scoresheet content may be plain text or OCR-like text below. Extract the full JSON described above from it.\n\n---\n' +
-        text;
-      const result = await model.generateContent(fullPrompt);
-      const response = result.response;
-      const raw = getGenerativeText(response).trim().replace(/^```json?\s*|\s*```$/g, '');
-      const parsed = parseJsonFromResponse(raw);
-      try { fs.writeFileSync(GEMINI_RESPONSE_FILE, JSON.stringify(parsed, null, 2), 'utf8'); } catch (e) {}
-      const out = normalizeExtracted(parsed);
-      const isEmpty = Object.keys(DEFAULT_DATA).every((k) => !out[k]);
-      if (isEmpty && raw) console.warn('Gemini returned empty extraction (text). Raw:', raw.slice(0, 500));
-      return out;
-    }
-    const textSent = getMinimalImagePrompt();
-    const imagePart = { inlineData: { mimeType, data: base64 } };
-    const result = await model.generateContent([textSent, imagePart]);
-    const response = result.response;
-    const raw = getGenerativeText(response).trim().replace(/^```json?\s*|\s*```$/g, '');
-    const parsed = parseJsonFromResponse(raw);
-    try { fs.writeFileSync(GEMINI_RESPONSE_FILE, JSON.stringify(parsed, null, 2), 'utf8'); } catch (e) {}
-    const out = normalizeExtracted(parsed);
-    const isEmpty = Object.keys(DEFAULT_DATA).every((k) => !out[k]);
-    if (isEmpty && raw) console.warn('Gemini returned empty extraction. Raw response:', raw.slice(0, 500));
-    return out;
+  if (!MIME_TO_CHAT_VISION[mimeType]) {
+    throw new Error(
+      `Extraction supports images only (${Object.keys(MIME_TO_CHAT_VISION).join(', ')}), not ${mimeType}. Export the scoresheet as JPEG or PNG and retry.`
+    );
   }
 
-  const maxAttemptsPerModel = 2;
-  let lastErr = null;
-  for (let modelIdx = 0; modelIdx < modelNames.length; modelIdx++) {
-    const modelName = modelNames[modelIdx];
-    const model = genAI.getGenerativeModel({
-      model: modelName,
-      generationConfig
-    });
-    for (let attempt = 1; attempt <= maxAttemptsPerModel; attempt++) {
-      try {
-        if (modelIdx > 0 && attempt === 1) {
-          console.warn(`Gemini fallback: trying model ${modelName}`);
-        }
-        return await doExtract(model);
-      } catch (err) {
-        lastErr = err;
-        if (isModelUnavailableError(err)) {
-          const hasAnotherModel = modelIdx < modelNames.length - 1;
-          if (hasAnotherModel) break;
-          throw err;
-        }
-        if (!isTransientGeminiError(err)) throw err;
-        const isLastTryForModel = attempt === maxAttemptsPerModel;
-        const hasAnotherModel = modelIdx < modelNames.length - 1;
-        if (isLastTryForModel && hasAnotherModel) break;
-        if (isLastTryForModel && !hasAnotherModel) throw err;
-        const parsedDelay = parseRetryDelayMs(err);
-        const backoffMs = Math.min(120000, Math.round(5000 * Math.pow(2, attempt - 1)));
-        const waitMs = parsedDelay != null ? Math.min(parsedDelay + 500, 120000) : backoffMs;
-        await delay(waitMs);
+  const buffer = fs.readFileSync(filePath);
+  const b64 = buffer.toString('base64');
+  const dataUrl = `data:${mimeType};base64,${b64}`;
+  if (Buffer.byteLength(dataUrl, 'utf8') > 3.5 * 1024 * 1024) {
+    throw new Error(
+      'Image is too large as a base64 data URL (~4MB API limit for Groq). Export a smaller JPEG/PNG (e.g. under 2.5MB file size) and retry.'
+    );
+  }
+
+  const userText =
+    getMinimalImagePrompt() +
+    '\n\nYou must respond with a single JSON object only (no markdown code fences).';
+
+  const maxTok = parseInt(String(process.env.CHAT_VISION_MAX_TOKENS || '8192'), 10);
+  const maxCompletionTokens = Number.isNaN(maxTok) ? 8192 : Math.min(16384, Math.max(1024, maxTok));
+
+  const body = {
+    model,
+    temperature: 0,
+    max_completion_tokens: maxCompletionTokens,
+    response_format: { type: 'json_object' },
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: userText },
+          { type: 'image_url', image_url: { url: dataUrl } }
+        ]
       }
-    }
+    ]
+  };
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+      ...extraHeaders
+    },
+    body: JSON.stringify(body)
+  });
+
+  const rawText = await res.text();
+  if (!res.ok) {
+    throw new Error(`Vision chat API HTTP ${res.status}: ${rawText.slice(0, 800)}`);
   }
-  throw lastErr || new Error('Gemini extraction failed across all configured models.');
+  let data;
+  try {
+    data = JSON.parse(rawText);
+  } catch (e) {
+    throw new Error(`Vision chat API returned invalid JSON body: ${rawText.slice(0, 300)}`);
+  }
+  const content = data?.choices?.[0]?.message?.content;
+  if (content == null || typeof content !== 'string') {
+    throw new Error('Vision chat API returned no message content.');
+  }
+  const parsed = parseJsonFromResponse(content.trim().replace(/^```json?\s*|\s*```$/g, ''));
+  try {
+    fs.writeFileSync(EXTRACTION_DEBUG_FILE, JSON.stringify(parsed, null, 2), 'utf8');
+  } catch (e) {}
+  return normalizeExtracted(parsed);
+}
+
+async function extractWithGroq(filePath, originalName, multerMime) {
+  const apiKey = String(process.env.GROQ_API_KEY || '')
+    .trim()
+    .replace(/^["']|["']$/g, '');
+  if (!apiKey) {
+    throw new Error(
+      'GROQ_API_KEY not set. Create a free key at https://console.groq.com/keys and add it to .env, then restart the server.'
+    );
+  }
+  const model = (process.env.GROQ_MODEL || GROQ_DEFAULT_VISION_MODEL).trim();
+  return extractWithChatCompletionsVision(filePath, originalName, multerMime, {
+    url: GROQ_CHAT_COMPLETIONS_URL,
+    apiKey,
+    model
+  });
 }
 
 app.use(express.json({ limit: '1mb' }));
@@ -602,29 +604,36 @@ app.put('/api/data', (req, res) => {
   }
 });
 
+function unlinkUploadSilently(filePath) {
+  try {
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (e) {}
+}
+
 app.post('/api/upload', upload.single('scoresheet'), async (req, res) => {
+  const filePath = req.file && req.file.path;
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    const filePath = req.file.path;
     const originalName = req.file.originalname || '';
     let extracted = null;
     try {
-      extracted = await extractWithGemini(filePath, originalName, req.file.mimetype);
+      extracted = await extractWithGroq(filePath, originalName, req.file.mimetype);
       fs.writeFileSync(DATA_FILE, JSON.stringify(extracted, null, 2), 'utf8');
-    } catch (geminiErr) {
-      const msg = geminiErr?.message || geminiErr?.toString?.() || 'Extraction failed';
-      console.error('Gemini extraction error:', msg);
-      const isTemporaryGemini503 =
+    } catch (extractErr) {
+      unlinkUploadSilently(filePath);
+      const msg = extractErr?.message || extractErr?.toString?.() || 'Extraction failed';
+      console.error('Extraction error:', msg);
+      const isTemporary503 =
         /\b503\b/.test(msg) &&
-        /(service unavailable|high demand|try again later)/i.test(msg);
-      const isGeminiQuota429 =
+        /(service unavailable|high demand|try again later|overloaded)/i.test(msg);
+      const isQuota429 =
         /\b429\b/.test(msg) &&
         /(too many requests|quota exceeded|rate limit|retry in)/i.test(msg);
-      const retryDelayMs = parseRetryDelayMs(geminiErr);
-      const userMessage = isTemporaryGemini503
-        ? 'Temporary service issue (503). The AI extraction service is currently overloaded. Please retry in 1-2 minutes. If this keeps happening, try a smaller file or try again later.'
-        : isGeminiQuota429
-        ? `Gemini API quota/rate limit reached (429).${retryDelayMs ? ` Please retry in about ${Math.max(1, Math.ceil(retryDelayMs / 1000))} seconds.` : ' Please retry in about a minute or use a new API key/project with available quota.'}`
+      const retryDelayMs = parseRetryDelayMs(extractErr);
+      const userMessage = isTemporary503
+        ? 'Temporary service issue (503). Please retry in 1-2 minutes or try a smaller image.'
+        : isQuota429
+        ? `Rate limit (429).${retryDelayMs ? ` Retry in about ${Math.max(1, Math.ceil(retryDelayMs / 1000))} seconds.` : ' Retry in a minute or check your Groq console.'}`
         : msg;
       return res.status(500).json({
         error: userMessage,
@@ -633,6 +642,7 @@ app.post('/api/upload', upload.single('scoresheet'), async (req, res) => {
       });
     }
 
+    unlinkUploadSilently(filePath);
     res.json({
       ok: true,
       filename: originalName,
@@ -641,15 +651,17 @@ app.post('/api/upload', upload.single('scoresheet'), async (req, res) => {
       data: extracted
     });
   } catch (err) {
+    unlinkUploadSilently(filePath);
     res.status(500).json({ error: err.message });
   }
 });
 
 if (!IS_VERCEL) {
   app.listen(PORT, () => {
-    const keySet = !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
     console.log(`Server at http://localhost:${PORT}`);
-    console.log('Gemini API key:', keySet ? 'set' : 'NOT SET (set GEMINI_API_KEY in .env)');
+    console.log('Extraction: Groq (vision + JSON)');
+    console.log('GROQ_API_KEY:', process.env.GROQ_API_KEY ? 'set' : 'NOT SET');
+    console.log('GROQ_MODEL:', (process.env.GROQ_MODEL || GROQ_DEFAULT_VISION_MODEL).trim());
   });
 }
 

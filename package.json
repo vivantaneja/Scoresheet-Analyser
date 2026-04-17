@@ -2,13 +2,16 @@
   "name": "scoresheet-analyser-v2",
   "version": "1.0.0",
   "description": "Editable scoresheet viewer",
+  "engines": {
+    "node": ">=18"
+  },
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "compare:json": "python3 scripts/compare_extractions.py"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "multer": "^2.0.2"

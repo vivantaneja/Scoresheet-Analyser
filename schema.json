@@ -64,25 +64,25 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 4,
-      "description": "Team A team fouls in period 1 (from the sheet only). Four boxes per period; each /, \\, or - = one foul, blank = none. Count only what is marked (0-4). If all four boxes are ticked, record 4—the actual count may be higher (fifth foul puts the other team in the bonus). A team with 4 fouls committed against them before the end of the quarter is in the bonus."
+      "description": "Team A team fouls in period 1. Four sequential boxes per period. Count ONLY a slash (/) or backslash (\\) as one team foul. A horizontal dash (– or -) or a blank box means NO foul in that slot; do not count dashes. Integer 0–4 = number of / or \\ marks only. If all four boxes show / or \\, use 4 (sheet may cap at four marks; bonus rules still apply on court)."
     },
     "teamAFoulsPeriod2": {
       "type": "integer",
       "minimum": 0,
       "maximum": 4,
-      "description": "Team A team fouls in period 2. Same as period 1: four boxes, count /, \\, - only (0-4). All four ticked = record 4 (may be more; bonus applies)."
+      "description": "Team A team fouls in period 2. Same counting: only / or \\ count as fouls; dash or blank = not a foul (0–4)."
     },
     "teamAFoulsPeriod3": {
       "type": "integer",
       "minimum": 0,
       "maximum": 4,
-      "description": "Team A team fouls in period 3. Same: four boxes, count marked fouls 0-4; four ticked = 4 (may be more; bonus)."
+      "description": "Team A team fouls in period 3. Same: count only / or \\; dash or blank = 0 toward count (0–4)."
     },
     "teamAFoulsPeriod4": {
       "type": "integer",
       "minimum": 0,
       "maximum": 4,
-      "description": "Team A team fouls in period 4. Same: four boxes, count 0-4; four ticked = 4 (may be more; bonus)."
+      "description": "Team A team fouls in period 4. Same: count only / or \\; dash or blank = not a foul (0–4)."
     },
     "teamBTimeoutsFirstHalf": {
       "type": "integer",
@@ -105,25 +105,25 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 4,
-      "description": "Team B team fouls in period 1 (from the sheet only). Four boxes per period; each /, \\, or - = one foul, blank = none. Count only what is marked (0-4). If all four boxes are ticked, record 4—the actual count may be higher (fifth foul puts the other team in the bonus). A team with 4 fouls committed against them before the end of the quarter is in the bonus."
+      "description": "Team B team fouls in period 1. Four boxes per period. Count ONLY / or \\ as one foul each. Dash (– or -) or blank = no foul in that slot (do not count). Integer 0–4."
     },
     "teamBFoulsPeriod2": {
       "type": "integer",
       "minimum": 0,
       "maximum": 4,
-      "description": "Team B team fouls in period 2. Same: four boxes, count 0-4; four ticked = 4 (may be more; bonus)."
+      "description": "Team B team fouls in period 2. Same: only / or \\ count; dash or blank = not a foul (0–4)."
     },
     "teamBFoulsPeriod3": {
       "type": "integer",
       "minimum": 0,
       "maximum": 4,
-      "description": "Team B team fouls in period 3. Same: four boxes, count 0-4; four ticked = 4 (may be more; bonus)."
+      "description": "Team B team fouls in period 3. Same: only / or \\ count; dash or blank = not a foul (0–4)."
     },
     "teamBFoulsPeriod4": {
       "type": "integer",
       "minimum": 0,
       "maximum": 4,
-      "description": "Team B team fouls in period 4. Same: four boxes, count 0-4; four ticked = 4 (may be more; bonus)."
+      "description": "Team B team fouls in period 4. Same: only / or \\ count; dash or blank = not a foul (0–4)."
     },
     "teamAPlayers": {
       "type": "array",
@@ -171,12 +171,12 @@
     },
     "runningScoreEvents": {
       "type": "array",
-      "description": "Running score (R1): read grid top-down, inner columns (A jersey | A mark | B mark | B jersey). For each mark: dot = 1 pt, slash/backslash = 2 pt, circle = 3 pt; jersey = number beside mark as written (do not reinterpret). One object per marked point, sorted by point.",
+      "description": "Running score (R1): L1 roster = Team A only; L2 = Team B only. Grid columns: A jersey | A mark | B mark | B jersey. Each mark on the A side → team A; each mark on the B side → team B. Do not put Team B marks under team A. One object per marked point, sorted by point.",
       "items": {
         "type": "object",
         "properties": {
           "point": { "type": "integer", "minimum": 1, "maximum": 120, "description": "Scoreboard point number (1-120)." },
-          "team": { "type": "string", "enum": ["A", "B"], "description": "Team that scored." },
+          "team": { "type": "string", "enum": ["A", "B"], "description": "Scoring team: \"A\" = L1 / Team A side of the grid; \"B\" = L2 / Team B side. Never use 1, 2, L1, or L2 here." },
           "type": { "type": "string", "enum": ["1", "2", "3"], "description": "1 = free throw (dot), 2 = two-pointer (slash/backslash), 3 = three-pointer (circle)." },
           "jersey": { "type": "string", "description": "Scorer jersey number." }
         },

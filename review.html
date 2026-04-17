@@ -24,6 +24,14 @@
       padding: 24px;
       line-height: 1.5;
     }
+    .extraction-hint {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin: -12px 0 20px;
+      line-height: 1.45;
+      max-width: 52em;
+    }
+    .extraction-hint code { font-size: 0.85em; color: var(--text); }
     .nav { margin-bottom: 20px; }
     .nav a { color: var(--muted); font-size: 0.85rem; text-decoration: none; }
     .nav a:hover { color: var(--accent); }
@@ -168,6 +176,10 @@
 <body>
   <nav class="nav"><a href="index.html">← Upload scoresheet</a></nav>
   <h1>Stats review</h1>
+  <p class="extraction-hint" role="note">
+    The model can misread handwriting, marks, or layout. Treat everything as a draft.
+    Cross-check all names, scores, quarters, fouls, and running-score events against the paper scoresheet before you rely on this data.
+  </p>
 
   <section id="match">
     <h2>Match details</h2>
@@ -343,12 +355,9 @@
       const totals = getPlayerTotalsByTeam();
       const finalA = parseInt(String(data.finalScoreTeamA || 0), 10) || 0;
       const finalB = parseInt(String(data.finalScoreTeamB || 0), 10) || 0;
-      const periodA = data.periodScoresTeamA || [0, 0, 0, 0];
-      const periodB = data.periodScoresTeamB || [0, 0, 0, 0];
-      const sumPeriodA = periodA[0] + periodA[1] + periodA[2] + periodA[3];
-      const sumPeriodB = periodB[0] + periodB[1] + periodB[2] + periodB[3];
-      const mismatch = (totals.teamA !== finalA || totals.teamB !== finalB) || (sumPeriodA !== finalA || sumPeriodB !== finalB);
-      if (mismatch && !window.confirm('Player totals or period scores do not match final score. Update period scores and final above to keep consistency, or save anyway?')) return;
+      const playerMatchFinal = totals.teamA === finalA && totals.teamB === finalB;
+      const mismatch = !playerMatchFinal;
+      if (mismatch && !window.confirm('Player totals do not match final score. Adjust player scoring or the final above, or save anyway?')) return;
       const payload = {};
       FIELDS.forEach(k => {
         if (INTEGER_FIELDS.has(k)) {
@@ -395,7 +404,7 @@
     function quartersPlayedList(p) {
       const q = ['playerInQuarter1', 'playerInQuarter2', 'playerInQuarter3', 'playerInQuarter4'];
       const played = q.map((k, i) => (p[k] && String(p[k]).trim()) ? (i + 1) : null).filter(Boolean);
-      return played.length ? played.join(', ') : '—';
+      return played.length ? played.join(', ') : '-';
     }
 
     function parseQuartersInput(str) {
@@ -407,7 +416,7 @@
     }
 
     function foulsList(p) {
-      const f = ['foul1', 'foul2', 'foul3', 'foul4', 'foul5'].map(k => (p[k] && String(p[k]).trim()) || '—');
+      const f = ['foul1', 'foul2', 'foul3', 'foul4', 'foul5'].map(k => (p[k] && String(p[k]).trim()) || '-');
       return f.join(', ');
     }
 
@@ -418,12 +427,35 @@
       return out;
     }
 
-    // Only events for point numbers up to and including the final score total (ignore boxes after game end).
+    function normalizeRunningEventTeam(raw) {
+      if (raw == null || raw === '') return '';
+      if (typeof raw === 'number') {
+        if (raw === 1) return 'A';
+        if (raw === 2) return 'B';
+      }
+      const s = String(raw).trim().toUpperCase();
+      if (s === 'A' || s === 'B') return s;
+      if (s === '1' || s === 'L1' || s === 'LINE 1' || s === 'LINE1') return 'A';
+      if (s === '2' || s === 'L2' || s === 'LINE 2' || s === 'LINE2') return 'B';
+      if (s === 'LEFT') return 'A';
+      if (s === 'RIGHT') return 'B';
+      if (s === 'TEAM A' || s === 'TEAMA' || s === 'TEAM-A' || s === 'TEAM_A') return 'A';
+      if (s === 'TEAM B' || s === 'TEAMB' || s === 'TEAM-B' || s === 'TEAM_B') return 'B';
+      const n = parseInt(s, 10);
+      if (n === 1) return 'A';
+      if (n === 2) return 'B';
+      return '';
+    }
+
+    // Keep events with valid point indices (1–120). Do not cap by finalScoreTeamA+B: that sum is total
+    // *points*, while `point` is the scoring-play order / row in the book (often far fewer rows than
+    // total points when many baskets are 2s or 3s; capping by points wrongly dropped plays and halved stats.
     function getR1EventsInRange() {
-      const total = (data.finalScoreTeamA || 0) + (data.finalScoreTeamB || 0);
       const events = data.runningScoreEvents || [];
-      if (total <= 0) return events;
-      return events.filter(e => e.point >= 1 && e.point <= total);
+      return events.filter((e) => {
+        const p = parseInt(String(e.point), 10);
+        return !Number.isNaN(p) && p >= 1 && p <= 120;
+      });
     }
 
     function renderR1QuarterTable() {
@@ -500,7 +532,8 @@
       const kitNosB = playersB.map(p => p.kitNo).filter(Boolean);
       const byTeamJersey = { A: {}, B: {} };
       events.forEach(e => {
-        const team = (e.team === 'B' || String(e.team).toUpperCase() === 'B') ? 'B' : 'A';
+        const team = normalizeRunningEventTeam(e.team);
+        if (!team) return;
         let jersey = String(e.jersey != null ? e.jersey : '').trim();
         if (!jersey) return;
         jersey = team === 'A' ? resolveJerseyToRoster(jersey, kitNosA) : resolveJerseyToRoster(jersey, kitNosB);
@@ -548,10 +581,13 @@
       if (matchFinal && matchPeriod) {
         wrap.className = 'r1-consistency ok';
         msg += 'Period totals match final.';
+      } else if (matchFinal) {
+        wrap.className = 'r1-consistency ok';
+        msg += 'Player totals match final score.';
       } else {
         wrap.className = 'r1-consistency warn';
-        if (!matchFinal) msg += 'Player totals do not match final score — update period scores and final above before saving. ';
-        if (!matchPeriod) msg += 'Period scores do not sum to final — fix before saving.';
+        if (!matchFinal) msg += 'Player totals do not match final score. Update period scores and final above before saving. ';
+        if (!matchPeriod) msg += 'Period scores do not sum to final. Fix before saving.';
       }
       wrap.textContent = msg;
     }
@@ -566,7 +602,8 @@
       const kitNosB = playersB.map(p => p.kitNo).filter(Boolean);
       const byTeamJersey = { A: {}, B: {} };
       events.forEach(e => {
-        const team = (e.team === 'B' || String(e.team).toUpperCase() === 'B') ? 'B' : 'A';
+        const team = normalizeRunningEventTeam(e.team);
+        if (!team) return;
         let jersey = String(e.jersey != null ? e.jersey : '').trim();
         if (!jersey) return;
         jersey = team === 'A' ? resolveJerseyToRoster(jersey, kitNosA) : resolveJerseyToRoster(jersey, kitNosB);
@@ -643,32 +680,14 @@
     function renderR1CrossCheck() {
       const wrap = document.getElementById('r1-crosscheck-wrap');
       if (!wrap) return;
-      const periodA = data.periodScoresTeamA || [0, 0, 0, 0];
-      const periodB = data.periodScoresTeamB || [0, 0, 0, 0];
       const finalA = data.finalScoreTeamA || 0;
       const finalB = data.finalScoreTeamB || 0;
-      const r2A = data.r2PeriodScoresTeamA || [];
-      const r2B = data.r2PeriodScoresTeamB || [];
       const r3A = data.r3FinalScoreTeamA ?? 0;
       const r3B = data.r3FinalScoreTeamB ?? 0;
       const winningName = (data.r3WinningTeamName || '').trim();
       const esc = (v) => String(v != null ? v : '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
-      const periodItems = [];
       const summaryItems = [];
       let ok = true;
-      if (r2A.length >= 4 || r2B.length >= 4) {
-        for (let i = 0; i < 4; i++) {
-          if (r2A[i] !== undefined && periodA[i] !== r2A[i]) {
-            periodItems.push('<li><span class="q-label">Q' + (i + 1) + '</span>Team A: sheet ' + periodA[i] + ', period box ' + r2A[i] + '</li>');
-            ok = false;
-          }
-          if (r2B[i] !== undefined && periodB[i] !== r2B[i]) {
-            periodItems.push('<li><span class="q-label">Q' + (i + 1) + '</span>Team B: sheet ' + periodB[i] + ', period box ' + r2B[i] + '</li>');
-            ok = false;
-          }
-        }
-        if (periodItems.length === 0) summaryItems.push('<li>All quarter scores match.</li>');
-      }
       if (r3A > 0 || r3B > 0) {
         if (r3A !== finalA || r3B !== finalB) {
           summaryItems.push('<li>Final score mismatch: sheet ' + finalA + '-' + finalB + ', final box ' + r3A + '-' + r3B + '.</li>');
@@ -677,7 +696,7 @@
           summaryItems.push('<li>Final score matches.</li>');
         }
       }
-      if (summaryItems.length === 0 && periodItems.length === 0) summaryItems.push('<li>Period scores/final not present in source data (optional on sheet).</li>');
+      if (summaryItems.length === 0) summaryItems.push('<li>No R3 final box in data to compare (optional on sheet).</li>');
       if (winningName) summaryItems.push('<li>Winning team (final): <strong>' + esc(winningName) + '</strong>.</li>');
       const title = ok ? 'Cross-check passed' : 'Cross-check needs attention';
       const stateClass = ok ? 'ok' : 'mismatch';
@@ -687,7 +706,6 @@
             '<span class="r1-crosscheck-msg ' + (ok ? 'r1-crosscheck-ok' : 'r1-crosscheck-mismatch') + '">' + title + '</span>' +
             '<span class="r1-crosscheck-badge">' + (ok ? 'Match' : 'Mismatch') + '</span>' +
           '</div>' +
-          (periodItems.length ? '<ul class="r1-crosscheck-list">' + periodItems.join('') + '</ul>' : '') +
           '<ul class="r1-crosscheck-list">' + summaryItems.join('') + '</ul>' +
         '</div>';
     }
@@ -728,7 +746,7 @@
             <td class="col-player"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="playerName" value="${esc(p.playerName)}" placeholder="Name" /></td>
             <td class="col-bipin"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="bipinNo" value="${esc(p.bipinNo)}" placeholder="PIN" /></td>
             <td class="col-quarters"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="quarters" value="${esc(quartersValue(p))}" placeholder="1 2 4" title="Quarters played: 1 2 4 or Q1 Q2 Q4" /></td>
-            <td class="col-fouls"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="fouls" value="${esc(foulsValue(p))}" placeholder="P, P2, —" title="P P1 P2 P3 U D T -" /></td>
+            <td class="col-fouls"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="fouls" value="${esc(foulsValue(p))}" placeholder="P, P2, -" title="P P1 P2 P3 U D T -" /></td>
             <td class="col-remove"><button type="button" class="remove-player" data-team="${teamKey}" data-index="${i}">×</button></td>
           </tr>`;
         }).join('') + '</tbody></table>';
