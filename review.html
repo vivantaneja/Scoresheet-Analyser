@@ -269,15 +269,15 @@
       <h3>Points per player</h3>
       <p class="r1-muted">Editable. 1pt = free throw, 2pt = two-pointer, 3pt = three-pointer. Total updates automatically. After editing, update period scores and final score above to keep consistency before saving.</p>
       <div id="r1-player-scoring-wrap"></div>
+      <!-- TEMP: player totals vs period vs final consistency banner disabled — restore div + renderConsistencyWarning() calls when needed
       <div id="r1-consistency-wrap" class="r1-consistency"></div>
+      -->
     </div>
-    <!-- TEMP: cross-check (R3 vs final) disabled — restore sub-section + renderR1CrossCheck() when needed
     <div class="sub-section" id="r1-crosscheck-section">
       <h3>Period scores / Final cross-check</h3>
       <p class="r1-muted">Period scores = points per quarter. Final = total score + winning team name.</p>
       <div id="r1-crosscheck-wrap"></div>
     </div>
-    -->
   </section>
 
   <section class="confirm-bar">
@@ -619,6 +619,7 @@
       return { teamA: sumA, teamB: sumB };
     }
 
+    /* TEMP: consistency banner disabled — uncomment function + #r1-consistency-wrap + calls below when needed
     function renderConsistencyWarning() {
       const wrap = document.getElementById('r1-consistency-wrap');
       if (!wrap) return;
@@ -645,6 +646,7 @@
       }
       wrap.textContent = msg;
     }
+    */
 
     function renderR1PlayerScoring() {
       const wrap = document.getElementById('r1-player-scoring-wrap');
@@ -712,7 +714,7 @@
         inp.addEventListener('input', updatePlayerRowTotal);
         inp.addEventListener('change', updatePlayerRowTotal);
       });
-      renderConsistencyWarning();
+      /* renderConsistencyWarning(); */
     }
 
     function updatePlayerRowTotal() {
@@ -729,10 +731,9 @@
       const p3 = parseInt(p3Inp && p3Inp.value, 10) || 0;
       if (totalEl) totalEl.textContent = p1 + p2 * 2 + p3 * 3;
       setPlayerScoringOverride(team, jersey, p1, p2, p3);
-      renderConsistencyWarning();
+      /* renderConsistencyWarning(); */
     }
 
-    /* TEMP: cross-check disabled — uncomment function + HTML block + refreshR1 call to restore
     function renderR1CrossCheck() {
       const wrap = document.getElementById('r1-crosscheck-wrap');
       if (!wrap) return;
@@ -765,12 +766,11 @@
           '<ul class="r1-crosscheck-list">' + summaryItems.join('') + '</ul>' +
         '</div>';
     }
-    */
 
     function bindR1Inputs() {
       const periodA = data.periodScoresTeamA || [0, 0, 0, 0];
       const periodB = data.periodScoresTeamB || [0, 0, 0, 0];
-      function refreshR1() { renderR1QuarterTable(); renderR1PlayerScoring(); /* renderR1CrossCheck(); */ if (document.getElementById('r1-consistency-wrap')) renderConsistencyWarning(); }
+      function refreshR1() { renderR1QuarterTable(); renderR1PlayerScoring(); renderR1CrossCheck(); /* if (document.getElementById('r1-consistency-wrap')) renderConsistencyWarning(); */ }
       ['r1-p1-a', 'r1-p2-a', 'r1-p3-a', 'r1-p4-a'].forEach((id, i) => {
         const el = document.getElementById(id);
         if (el) { el.value = periodA[i] || 0; el.oninput = () => { data.periodScoresTeamA = data.periodScoresTeamA || [0,0,0,0]; data.periodScoresTeamA[i] = parseInt(el.value, 10) || 0; refreshR1(); }; }

@@ -37,9 +37,16 @@ Grid layout (typical):
 - Jersey number: record the digit(s) written beside the mark exactly as you read them. Do not reinterpret or correct numbers during extraction; output the jersey as written.
 - Return runningScoreEvents: array of objects, one per marked point, each { point (1–120), team ("A" or "B" only), type ("1" or "2" or "3"), jersey (string, e.g. "7") }. Sort by point ascending.
 - Field `point` is the **scoring-play sequence** (1st basket or FT of the game = 1, next score = 2, …). It is **not** the running point total for a team and **not** (team A final + team B final). Those totals are much larger than the number of scoring rows when most scores are 2- or 3-pointers.
-- Field `type` must match the mark in the point column: **slash or backslash = "2"** (two points), **small dot = "1"** (one point), **circle around the play = "3"**. Do not default every basket to "1"; that would undercount points by about half in a typical game.
+- Field `type` must match the mark in the **running-score point column only** (not player "Player In" slashes). **Slash or backslash in the point column = "2"** (two points), **small dot = "1"** (one point), **circle around the play = "3"**. Do not default every basket to "1"; that collapses real scores by about half.
+- **Printed row numbers** in the R1 grid (e.g. 1–40, 41–80) are not always the same as `point` sequence: `point` is the **order of scoring plays** (1st basket of the game, 2nd, …). Follow the scorekeeper order down the page.
 
 Example (illustrative): {"point": 3, "team": "A", "type": "2", "jersey": "7"} and {"point": 4, "team": "B", "type": "1", "jersey": "12"}.
+
+**Accuracy pass before you return JSON:**
+1. Read the **printed final** (and R3 if present). Set `finalScoreTeamA` / `finalScoreTeamB` to those numbers.
+2. For each team, sum `type` over `runningScoreEvents` where `team` is "A" or "B" (1 + 2 + 3 values). That sum should equal that team's printed final if you read every basket and type correctly. If you used all `"1"` for field goals but the printed final is about **twice** the number of that team's events, you misclassified 2-pointers: change those marks to `"2"`. If the final is about **three times** the event count, they were 3-pointers: use `"3"`.
+3. `periodScoresTeamA` / `periodScoresTeamB` are **points scored in each quarter** (four numbers each), from the main scores table, not running cumulative unless the sheet labels them that way.
+
 - If the "Scores" or "Period Scores" section is visible at the bottom, return periodScoresTeamA, periodScoresTeamB (arrays of 4 numbers), finalScoreTeamA, finalScoreTeamB.
 - R2 – Period Scores: R2 contains the scores at the end of each period. It is only the points scored during that period, NOT the running total. Return r2PeriodScoresTeamA and r2PeriodScoresTeamB as arrays of 4 numbers (points in period 1, 2, 3, 4 for each team). Omit or empty if R2 not on sheet.
 - R3 – Final: R3 contains the total final score (including all periods and extra periods). It also has the name of the winning team written underneath. Return r3FinalScoreTeamA, r3FinalScoreTeamB (integers), and r3WinningTeamName (string; the winning team name as shown). Omit or empty if R3 not on sheet.

@@ -91,6 +91,22 @@ const MIME_TO_CHAT_VISION = {
 
 const GROQ_CHAT_COMPLETIONS_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_DEFAULT_VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+/** Groq hard cap for `max_completion_tokens` on many models (API message references 8192). */
+const GROQ_MAX_COMPLETION_TOKENS_CAP = 8192;
+/** Default below cap: vision + long schema/prompt use input tokens, so requesting 8192 can still 400. */
+const GROQ_DEFAULT_COMPLETION_TOKENS = 4096;
+
+function groqMaxCompletionTokensFromEnv() {
+  const raw = process.env.CHAT_VISION_MAX_TOKENS;
+  if (raw == null || String(raw).trim() === '') {
+    return Math.min(GROQ_MAX_COMPLETION_TOKENS_CAP, GROQ_DEFAULT_COMPLETION_TOKENS);
+  }
+  const n = parseInt(String(raw).trim(), 10);
+  if (Number.isNaN(n)) {
+    return Math.min(GROQ_MAX_COMPLETION_TOKENS_CAP, GROQ_DEFAULT_COMPLETION_TOKENS);
+  }
+  return Math.min(GROQ_MAX_COMPLETION_TOKENS_CAP, Math.max(256, n));
+}
 
 function getMimeType(filePath, originalName, multerMime) {
   const ext = path.extname(originalName || filePath).toLowerCase().replace(/^\./, '');
@@ -268,6 +284,53 @@ function repartitionRunningEventsByFinals(events, finalA, finalB) {
   return sorted.map((e, i) => ({ ...e, team: inA[i] ? 'A' : 'B' }));
 }
 
+/**
+ * Vision models often label every field goal as type "1". If every event for a team shares one type
+ * and printed final equals a uniform multiple (all 1s but final = 2×count, etc.), adjust types in lockstep.
+ */
+function recalibrateUniformBasketTypes(events, finalA, finalB) {
+  if (!Array.isArray(events) || events.length === 0) return events;
+  const fa = Math.max(0, parseInt(String(finalA), 10) || 0);
+  const fb = Math.max(0, parseInt(String(finalB), 10) || 0);
+  const out = events.map((e) => ({ ...e }));
+
+  function applyUniform(teamKey, finalT) {
+    if (finalT <= 0) return;
+    const idx = [];
+    for (let i = 0; i < out.length; i++) {
+      if (out[i].team === teamKey) idx.push(i);
+    }
+    if (idx.length === 0) return;
+    const t0 = String(out[idx[0]].type);
+    if (!idx.every((i) => String(out[i].type) === t0)) return;
+    const n = idx.length;
+    const sumNow = idx.reduce((s, i) => s + (POINT_VALUE[String(out[i].type)] || 0), 0);
+    if (sumNow === finalT) return;
+
+    if (t0 === '1' && n * 2 === finalT) {
+      idx.forEach((i) => {
+        out[i] = { ...out[i], type: '2' };
+      });
+      return;
+    }
+    if (t0 === '1' && n * 3 === finalT) {
+      idx.forEach((i) => {
+        out[i] = { ...out[i], type: '3' };
+      });
+      return;
+    }
+    if (t0 === '2' && sumNow === n * 2 && finalT === n) {
+      idx.forEach((i) => {
+        out[i] = { ...out[i], type: '1' };
+      });
+    }
+  }
+
+  applyUniform('A', fa);
+  applyUniform('B', fb);
+  return out;
+}
+
 function normalizeRunningScoreEvent(e) {
   if (!e || typeof e !== 'object') return null;
   const point = parseInt(String(e.point), 10);
@@ -280,7 +343,8 @@ function normalizeRunningScoreEvent(e) {
     const tn = parseInt(type, 10);
     if (!Number.isNaN(tn) && tn >= 1 && tn <= 3) type = String(tn);
   }
-  const jersey = String(e.jersey != null ? e.jersey : '').trim();
+  let jersey = String(e.jersey != null ? e.jersey : '').trim();
+  if (/^\d+$/.test(jersey)) jersey = String(parseInt(jersey, 10));
   if (Number.isNaN(point) || point < 1 || point > 120) return null;
   if (team !== 'A' && team !== 'B') return null;
   if (type !== '1' && type !== '2' && type !== '3') return null;
@@ -405,6 +469,11 @@ function normalizeExtracted(parsed) {
   out.r3FinalScoreTeamA = Number.isNaN(r3A) || r3A < 0 ? 0 : r3A;
   out.r3FinalScoreTeamB = Number.isNaN(r3B) || r3B < 0 ? 0 : r3B;
   out.r3WinningTeamName = (parsed.r3WinningTeamName != null && String(parsed.r3WinningTeamName).trim() !== '') ? String(parsed.r3WinningTeamName).trim() : (parsed.r3_winning_team_name != null && String(parsed.r3_winning_team_name).trim() !== '') ? String(parsed.r3_winning_team_name).trim() : '';
+  if (out.finalScoreTeamA === 0 && out.finalScoreTeamB === 0 && (out.r3FinalScoreTeamA > 0 || out.r3FinalScoreTeamB > 0)) {
+    out.finalScoreTeamA = out.r3FinalScoreTeamA;
+    out.finalScoreTeamB = out.r3FinalScoreTeamB;
+  }
+  out.runningScoreEvents = recalibrateUniformBasketTypes(out.runningScoreEvents, out.finalScoreTeamA, out.finalScoreTeamB);
   out.runningScoreEvents = repartitionRunningEventsByFinals(out.runningScoreEvents, out.finalScoreTeamA, out.finalScoreTeamB);
   return out;
 }
@@ -453,38 +522,50 @@ async function extractWithChatCompletionsVision(filePath, originalName, multerMi
     getMinimalImagePrompt() +
     '\n\nYou must respond with a single JSON object only (no markdown code fences).';
 
-  const maxTok = parseInt(String(process.env.CHAT_VISION_MAX_TOKENS || '8192'), 10);
-  const maxCompletionTokens = Number.isNaN(maxTok) ? 8192 : Math.min(16384, Math.max(1024, maxTok));
+  let maxCompletionTokens = groqMaxCompletionTokensFromEnv();
+  let res;
+  let rawText = '';
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const body = {
+      model,
+      temperature: 0,
+      max_completion_tokens: maxCompletionTokens,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: userText },
+            { type: 'image_url', image_url: { url: dataUrl } }
+          ]
+        }
+      ]
+    };
 
-  const body = {
-    model,
-    temperature: 0,
-    max_completion_tokens: maxCompletionTokens,
-    response_format: { type: 'json_object' },
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: userText },
-          { type: 'image_url', image_url: { url: dataUrl } }
-        ]
-      }
-    ]
-  };
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        ...extraHeaders
+      },
+      body: JSON.stringify(body)
+    });
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-      ...extraHeaders
-    },
-    body: JSON.stringify(body)
-  });
-
-  const rawText = await res.text();
-  if (!res.ok) {
+    rawText = await res.text();
+    if (res.ok) break;
+    const retryable400 =
+      res.status === 400 &&
+      /max_completion_tokens|max_tokens/i.test(rawText) &&
+      maxCompletionTokens > 256;
+    if (retryable400) {
+      maxCompletionTokens = Math.max(256, Math.floor(maxCompletionTokens / 2));
+      continue;
+    }
     throw new Error(`Vision chat API HTTP ${res.status}: ${rawText.slice(0, 800)}`);
+  }
+  if (!res.ok) {
+    throw new Error(`Vision chat API HTTP ${res.status} (after lowering max_completion_tokens): ${rawText.slice(0, 800)}`);
   }
   let data;
   try {

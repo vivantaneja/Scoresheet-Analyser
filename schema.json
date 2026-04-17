@@ -177,7 +177,7 @@
         "properties": {
           "point": { "type": "integer", "minimum": 1, "maximum": 120, "description": "Scoreboard point number (1-120)." },
           "team": { "type": "string", "enum": ["A", "B"], "description": "Scoring team: \"A\" = L1 / Team A side of the grid; \"B\" = L2 / Team B side. Never use 1, 2, L1, or L2 here." },
-          "type": { "type": "string", "enum": ["1", "2", "3"], "description": "1 = free throw (dot), 2 = two-pointer (slash/backslash), 3 = three-pointer (circle)." },
+          "type": { "type": "string", "enum": ["1", "2", "3"], "description": "1 = free throw (dot in R1 point column), 2 = two-pointer (slash or backslash in R1 point column only; not player-row slashes), 3 = three-pointer (circle). Sum of type values for team A must match printed final for team A when every basket is captured." },
           "jersey": { "type": "string", "description": "Scorer jersey number." }
         },
         "required": ["point", "team", "type", "jersey"]
@@ -197,8 +197,8 @@
       "items": { "type": "integer", "minimum": 0 },
       "description": "Points scored by Team B in each period (1-4), from Scores section if visible."
     },
-    "finalScoreTeamA": { "type": "integer", "minimum": 0, "description": "Team A final score." },
-    "finalScoreTeamB": { "type": "integer", "minimum": 0, "description": "Team B final score." },
+    "finalScoreTeamA": { "type": "integer", "minimum": 0, "description": "Team A final score from the printed final on the sheet (authoritative for checking running-score types)." },
+    "finalScoreTeamB": { "type": "integer", "minimum": 0, "description": "Team B final score from the printed final (authoritative for checking running-score types)." },
     "pointsPerColumn": { "type": "integer", "minimum": 40, "description": "Points per main column in R1 grid (40 or 60)." },
     "r2PeriodScoresTeamA": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "integer", "minimum": 0 }, "description": "R2 – Period Scores: points scored by Team A in each period only (Q1, Q2, Q3, Q4), not cumulative. Omit if R2 not on sheet." },
     "r2PeriodScoresTeamB": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "integer", "minimum": 0 }, "description": "R2 – Period Scores: points scored by Team B in each period only. Omit if not on sheet." },

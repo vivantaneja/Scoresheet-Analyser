@@ -18,7 +18,7 @@ In `.env`:
 
 1. **`GROQ_API_KEY`**: from [Groq Console → API Keys](https://console.groq.com/keys).
 2. Optional **`GROQ_MODEL`**: default `meta-llama/llama-4-scout-17b-16e-instruct` ([vision docs](https://console.groq.com/docs/vision)).
-3. Optional **`CHAT_VISION_MAX_TOKENS`**: default `8192`.
+3. Optional **`CHAT_VISION_MAX_TOKENS`**: default `4096` (capped at `8192`; higher defaults can cause Groq 400 on vision + long prompts).
 
 ## 3. Run
 
