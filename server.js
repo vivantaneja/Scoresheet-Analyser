@@ -880,6 +880,8 @@ const sendHtml = (filename, req, res) => {
 app.get('/', (req, res) => sendHtml('index.html', req, res));
 app.get('/index.html', (req, res) => sendHtml('index.html', req, res));
 app.get('/review.html', (req, res) => sendHtml('review.html', req, res));
+app.get('/privacy', (req, res) => sendHtml('privacy.html', req, res));
+app.get('/privacy.html', (req, res) => sendHtml('privacy.html', req, res));
 
 app.get('/api/config', (req, res) => {
   const siteKey = process.env.TURNSTILE_SITE_KEY && String(process.env.TURNSTILE_SITE_KEY).trim();

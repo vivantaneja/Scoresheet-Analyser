@@ -300,12 +300,14 @@
       margin: 0;
       line-height: 1.5;
     }
-    .demo-card a {
+    .demo-card a,
+    .upload-privacy-notice a {
       color: var(--accent);
       font-weight: 500;
       text-decoration: none;
     }
-    .demo-card a:hover { text-decoration: underline; }
+    .demo-card a:hover,
+    .upload-privacy-notice a:hover { text-decoration: underline; }
 
     .tips-list {
       margin: 0;
@@ -326,12 +328,35 @@
       font-size: 0.75rem;
       color: var(--text-secondary);
       line-height: 1.55;
-      max-width: 52ch;
+      max-width: 58ch;
       margin: 0;
       padding: calc(var(--step) * 2);
       border-radius: var(--radius-md);
       background: var(--bg-elevated);
       border: 1px solid var(--border);
+    }
+    .upload-privacy-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      margin: 0 0 calc(var(--step) * 1.25);
+    }
+    .upload-privacy-list {
+      margin: 0;
+      padding-left: 1.15rem;
+    }
+    .upload-privacy-list li {
+      margin-bottom: calc(var(--step) * 0.75);
+    }
+    .upload-privacy-list li:last-child {
+      margin-bottom: 0;
+    }
+    .upload-privacy-more {
+      margin: calc(var(--step) * 1.5) 0 0;
+      padding-top: calc(var(--step) * 1.5);
+      border-top: 1px solid var(--border);
     }
   </style>
 </head>
@@ -350,6 +375,7 @@
       </div>
       <nav class="header-actions" aria-label="Main">
         <a href="review.html">Open review</a>
+        <a href="privacy.html">Privacy</a>
       </nav>
     </header>
 
@@ -402,9 +428,16 @@
     </main>
 
     <footer class="site-footer">
-      <p class="upload-privacy-notice" role="note">
-        Images are sent to Groq for extraction and removed from this server afterward. Your session keeps a private copy of the extracted match JSON on the server (or only in this browser if the host does not provide storage). Do not upload sheets you are not allowed to share.
-      </p>
+      <div class="upload-privacy-notice" role="note" aria-labelledby="privacy-notice-heading">
+        <h2 id="privacy-notice-heading" class="upload-privacy-title">Privacy</h2>
+        <ul class="upload-privacy-list">
+          <li>Images are sent to a third-party AI vision provider for extraction, then removed from this server.</li>
+          <li>Your session keeps a private copy of the extracted match JSON on the server when storage is available.</li>
+          <li>If the host does not provide storage, that data stays only in this browser.</li>
+          <li>Do not upload sheets you are not allowed to share.</li>
+        </ul>
+        <p class="upload-privacy-more">See the <a href="privacy.html">privacy policy</a> for details.</p>
+      </div>
     </footer>
   </div>
 

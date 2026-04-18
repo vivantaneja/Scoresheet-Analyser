@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy – Scoresheet Analyser</title>
+  <style>
+    :root {
+      --bg: #0c0f14;
+      --bg-elevated: #121820;
+      --surface: #161d27;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.14);
+      --text: #f0f3f7;
+      --text-secondary: #9aa5b1;
+      --accent: #6eb3ff;
+      --radius-lg: 16px;
+      --radius-md: 10px;
+      --radius-sm: 6px;
+      --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-mono: ui-monospace, "SF Mono", Consolas, monospace;
+      --step: 8px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.65;
+      color: var(--text);
+      background: var(--bg);
+      background-image:
+        radial-gradient(ellipse 120% 80% at 50% -40%, rgba(110, 179, 255, 0.12), transparent 55%),
+        radial-gradient(ellipse 80% 50% at 100% 100%, rgba(62, 207, 142, 0.06), transparent 45%);
+    }
+
+    .page {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: calc(var(--step) * 3) calc(var(--step) * 2) calc(var(--step) * 6);
+    }
+
+    .site-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--step);
+      padding-bottom: calc(var(--step) * 3);
+      margin-bottom: calc(var(--step) * 4);
+      border-bottom: 1px solid var(--border);
+    }
+    .brand { display: flex; align-items: center; gap: calc(var(--step) * 1.5); }
+    .brand-mark {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(145deg, rgba(110, 179, 255, 0.14), transparent);
+      border: 1px solid var(--border-strong);
+      display: grid;
+      place-items: center;
+    }
+    .brand-mark svg { width: 22px; height: 22px; color: var(--accent); }
+    .brand-text .name {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+    .header-actions { display: flex; align-items: center; gap: calc(var(--step) * 1); }
+    .header-actions a {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-decoration: none;
+      padding: calc(var(--step) * 0.75) calc(var(--step) * 1.5);
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+    .header-actions a:hover {
+      color: var(--text);
+      background: var(--surface);
+      border-color: var(--border);
+    }
+
+    main h1 {
+      font-size: clamp(1.6rem, 4vw, 2.1rem);
+      font-weight: 750;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      margin: 0 0 calc(var(--step) * 1);
+    }
+    main .meta {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin: 0 0 calc(var(--step) * 4);
+    }
+
+    main h2 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin: calc(var(--step) * 4) 0 calc(var(--step) * 1);
+    }
+
+    main p, main ul { margin: 0 0 calc(var(--step) * 1.5); }
+    main ul { padding-left: 1.15rem; }
+    main li { margin-bottom: calc(var(--step) * 0.5); }
+
+    main a { color: var(--accent); }
+    main a:hover { text-decoration: underline; }
+
+    code, .mono {
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      padding: 1px 5px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+    }
+
+    .site-footer {
+      margin-top: calc(var(--step) * 6);
+      padding-top: calc(var(--step) * 2);
+      border-top: 1px solid var(--border);
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      display: flex;
+      justify-content: space-between;
+      gap: var(--step);
+      flex-wrap: wrap;
+    }
+    .site-footer a { color: var(--text-secondary); text-decoration: none; }
+    .site-footer a:hover { color: var(--text); text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="site-header">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19V5M4 19h16M4 19l4-8 4 4 4-6 4 10" />
+          </svg>
+        </div>
+        <div class="brand-text">
+          <p class="name">Scoresheet Analyser</p>
+        </div>
+      </div>
+      <nav class="header-actions" aria-label="Main">
+        <a href="/">Upload</a>
+        <a href="/review.html">Review</a>
+      </nav>
+    </header>
+
+    <main>
+      <h1>Privacy Policy</h1>
+      <p class="meta">Last updated: 18 April 2026</p>
+
+      <h2>1. Who we are</h2>
+      <p>
+        Scoresheet Analyser (&ldquo;the Service&rdquo;) is operated by
+        <strong>Vivan Taneja</strong>, an individual (&ldquo;I&rdquo;, &ldquo;me&rdquo;).
+        It is hosted at
+        <a href="https://scoresheet-analyser.vivantaneja.com/">https://scoresheet-analyser.vivantaneja.com/</a>.
+      </p>
+      <p>Contact: <a href="mailto:vivan@vivantaneja.com">vivan@vivantaneja.com</a>.</p>
+
+      <h2>2. What the Service does</h2>
+      <p>
+        You upload a photo of a basketball scoresheet. The image is sent to a
+        third-party AI vision provider to extract match data, which is then shown in
+        your browser so you can review and edit it.
+      </p>
+
+      <h2>3. Data handled</h2>
+      <ul>
+        <li><strong>Uploaded scoresheet images.</strong> Held briefly on the server only for the time needed to request extraction from the AI provider, then deleted.</li>
+        <li><strong>Extracted match data.</strong> Text fields such as team names, player names and jersey numbers, fouls, scores, referees, competition name, date/time, place. Saved against your anonymous session (see &sect;4) only while you are reviewing and editing it.</li>
+        <li><strong>Anonymous session cookie.</strong> An httpOnly cookie (<code>sa_session</code>) containing a signed random identifier. It is used only to keep your data separate from other visitors&rsquo;. No name, email, or login.</li>
+        <li><strong>Technical data.</strong> IP address and basic request metadata used for rate limits, abuse prevention, and short-term server logs.</li>
+        <li><strong>Browser local storage.</strong> Your last extracted JSON is cached locally in your browser so the review page loads instantly.</li>
+      </ul>
+      <p>I do not create accounts, ask for your email, run advertising, or sell data.</p>
+
+      <h2>4. Legal basis (EEA/UK users)</h2>
+      <p>Where GDPR/UK GDPR applies, I rely on:</p>
+      <ul>
+        <li><strong>Legitimate interests</strong> to operate the Service, prevent abuse, and keep it available (rate limiting, logs).</li>
+        <li><strong>Your consent</strong> (by uploading) to process the image and extracted data for the purposes described above.</li>
+      </ul>
+
+      <h2>5. How the data is used</h2>
+      <ul>
+        <li>Perform the scoresheet extraction you request.</li>
+        <li>Store and display your extracted JSON so you can review and edit it.</li>
+        <li>Protect the Service (rate limits, error logs).</li>
+      </ul>
+
+      <h2>6. Categories of recipients</h2>
+      <p>
+        I use a small number of third-party service providers (&ldquo;processors&rdquo;)
+        solely to operate the Service. I do not sell or share personal data for
+        advertising or marketing.
+      </p>
+      <ul>
+        <li><strong>AI vision provider</strong> &mdash; processes uploaded images to return extracted JSON. Subject to its own terms and privacy policy.</li>
+        <li><strong>Cloud database / storage provider</strong> &mdash; stores your extracted JSON keyed to your anonymous session identifier while you are using the Service.</li>
+        <li><strong>Hosting / infrastructure provider: Vercel Inc.</strong> &mdash; runs the Service and may keep short-term request logs (<a href="https://vercel.com/legal/privacy-policy">https://vercel.com/legal/privacy-policy</a>).</li>
+      </ul>
+      <p>
+        A current list of providers and links to their policies is available on request at
+        <a href="mailto:vivan@vivantaneja.com">vivan@vivantaneja.com</a>.
+      </p>
+
+      <h2>7. International transfers</h2>
+      <p>
+        Processors may be located in countries outside your own, including the
+        <strong>United States</strong>. By using the Service you understand that your
+        data may be transferred there. Where required, I rely on appropriate
+        safeguards offered by those processors (for example, their published
+        data-processing terms and standard contractual clauses).
+      </p>
+
+      <h2>8. Retention</h2>
+      <ul>
+        <li><strong>Uploaded images:</strong> deleted from the server immediately after extraction (or on failure).</li>
+        <li><strong>Extracted match JSON:</strong> retained only while you are using the Service. It is removed when you finish &mdash; for example by clearing cookies and local storage for the site, or on request to <a href="mailto:vivan@vivantaneja.com">vivan@vivantaneja.com</a>. I may also delete inactive data at my discretion.</li>
+        <li><strong>Rate-limit counters and server logs:</strong> kept short-term for operations and abuse handling.</li>
+      </ul>
+
+      <h2>9. Your choices and rights</h2>
+      <ul>
+        <li><strong>Clear your data:</strong> delete cookies and local storage for the site, or email me to delete your session&rsquo;s stored JSON.</li>
+        <li><strong>Access / correction / deletion:</strong> email <a href="mailto:vivan@vivantaneja.com">vivan@vivantaneja.com</a>. Because sessions are anonymous, please include your <code>sa_session</code> cookie value or the approximate time of use so I can locate your data.</li>
+        <li><strong>EEA/UK users:</strong> you may complain to your national data protection authority.</li>
+        <li><strong>California users:</strong> CCPA/CPRA rights of access, deletion, and opt-out of &ldquo;sharing&rdquo; &mdash; I do not sell or &ldquo;share&rdquo; personal data as defined.</li>
+      </ul>
+
+      <h2>10. Children</h2>
+      <p>
+        The Service is not directed to children under <strong>13</strong>. Do not
+        upload sheets that identify minors unless you have the right to do so and
+        accept responsibility for that content.
+      </p>
+
+      <h2>11. Security</h2>
+      <p>
+        The Service uses HTTPS, httpOnly signed session cookies, per-user isolation,
+        and rate limits. No online service is perfectly secure; use the Service at
+        your own risk.
+      </p>
+
+      <h2>12. Responsible use</h2>
+      <p>
+        Do not upload scoresheets you are not allowed to share. Where sheets contain
+        personal data of others (players, referees, etc.), you confirm you have
+        authority to upload and process that data for the purposes above.
+      </p>
+
+      <h2>13. Changes</h2>
+      <p>
+        This policy may be updated. Material changes will be reflected by a new
+        &ldquo;Last updated&rdquo; date. Continued use after an update means you
+        accept the new version.
+      </p>
+
+      <h2>14. Contact</h2>
+      <p>Questions or requests: <a href="mailto:vivan@vivantaneja.com">vivan@vivantaneja.com</a>.</p>
+    </main>
+
+    <footer class="site-footer">
+      <span>&copy; Vivan Taneja</span>
+      <span><a href="/">Upload</a> &middot; <a href="/review.html">Review</a> &middot; <a href="/privacy.html">Privacy</a></span>
+    </footer>
+  </div>
+</body>
+</html>
