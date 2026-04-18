@@ -13,8 +13,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const IS_VERCEL = !!process.env.VERCEL;
 const WORK_DIR = IS_VERCEL ? '/tmp' : __dirname;
-/** Local-only per-user JSON files; dot-prefixed so express.static does not serve them. */
-const USER_DATA_DIR = path.join(__dirname, '.user-data');
+/** Per-user JSON files when not using Redis. On Vercel, only /tmp is writable — not __dirname. */
+const USER_DATA_DIR = path.join(WORK_DIR, '.user-data');
 const EXTRACTION_DEBUG_FILE = path.join(WORK_DIR, 'last-extraction.json');
 const SCHEMA_FILE = path.join(__dirname, 'schema.json');
 const PROMPT_FILE = path.join(__dirname, 'extraction-prompt.txt');
