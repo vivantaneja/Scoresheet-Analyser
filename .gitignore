@@ -6,6 +6,9 @@
 # Persisted match data (optional: remove from .gitignore to track)
 data.json
 
+# Per-browser user files (local multi-user mode)
+.user-data/
+
 # Uploaded scoresheets
 uploads/
 

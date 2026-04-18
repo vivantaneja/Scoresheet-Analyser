@@ -184,6 +184,16 @@
       margin: 0 0 calc(var(--step) * 2);
       max-width: 28ch;
     }
+    .turnstile-wrap {
+      margin: 0 0 calc(var(--step) * 2);
+      min-height: 68px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .turnstile-wrap[hidden] {
+      display: none !important;
+    }
     .format-chips {
       display: flex;
       flex-wrap: wrap;
@@ -356,6 +366,7 @@
             </svg>
             <p class="dropzone-title">Drop a file here or click to browse</p>
             <p class="dropzone-sub" id="upload-hint">Use a well-lit photo. Very large files may fail the upload limit.</p>
+            <div id="turnstile-wrap" class="turnstile-wrap" hidden></div>
             <div class="format-chips" aria-label="Accepted file types">
               <span>JPEG</span>
               <span>PNG</span>
@@ -392,7 +403,7 @@
 
     <footer class="site-footer">
       <p class="upload-privacy-notice" role="note">
-        Uploaded files are removed from the server right after extraction. Extracted JSON is stored locally in your browser when you open review, and in <code style="font-size:0.9em">data.json</code> on the machine running this app.
+        Images are sent to Groq for extraction and removed from this server afterward. Your session keeps a private copy of the extracted match JSON on the server (or only in this browser if the host does not provide storage). Do not upload sheets you are not allowed to share.
       </p>
     </footer>
   </div>
@@ -403,6 +414,7 @@
       const fileInput = document.getElementById('scoresheet-file');
       const statusEl = document.getElementById('upload-status');
       const goReview = document.getElementById('go-review');
+      const turnstileWrap = document.getElementById('turnstile-wrap');
       const statusSteps = [
         { t: 0, msg: 'Uploading…' },
         { t: 12000, msg: 'Extracting with vision model…' },
@@ -428,11 +440,21 @@
       }
       function uploadFile(file) {
         if (!file) return;
+        if (window.__turnstileSiteKey) {
+          const tok = window.__turnstileToken;
+          if (!tok) {
+            setStatus('Complete the verification below, then upload again.', true);
+            return;
+          }
+        }
         setReviewVisible(false);
         startStatusSequence();
         const form = new FormData();
         form.append('scoresheet', file);
-        fetch('/api/upload', { method: 'POST', body: form })
+        if (window.__turnstileToken) {
+          form.append('cf-turnstile-response', window.__turnstileToken);
+        }
+        fetch('/api/upload', { method: 'POST', body: form, credentials: 'same-origin' })
           .then((r) => r.json().then((d) => ({ ok: r.ok, status: r.status, data: d })))
           .then(({ ok, status, data: d }) => {
             stopStatusSequence();
@@ -444,8 +466,17 @@
               }
               setStatus('Done: ' + (d.filename || 'scoresheet'));
               setReviewVisible(true);
+              if (typeof turnstile !== 'undefined' && window.turnstileWidgetId != null) {
+                try {
+                  turnstile.reset(window.turnstileWidgetId);
+                } catch (e) {}
+                window.__turnstileToken = null;
+              }
             } else {
-              const msg = d && d.error ? d.error : 'Upload failed (HTTP ' + status + ')';
+              let msg = d && d.error ? d.error : 'Upload failed (HTTP ' + status + ')';
+              if (status === 429 && d && d.retryAfterSeconds) {
+                msg += ' Retry in about ' + d.retryAfterSeconds + 's.';
+              }
               setStatus(msg, true);
             }
           })
@@ -454,6 +485,31 @@
             setStatus('Upload failed: ' + (e.message || e), true);
           });
       }
+
+      fetch('/api/config', { credentials: 'same-origin' })
+        .then((r) => r.json())
+        .then((cfg) => {
+          if (!cfg || !cfg.turnstileSiteKey) return;
+          window.__turnstileSiteKey = cfg.turnstileSiteKey;
+          turnstileWrap.hidden = false;
+          const s = document.createElement('script');
+          s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+          s.async = true;
+          s.onload = () => {
+            window.turnstileWidgetId = turnstile.render(turnstileWrap, {
+              sitekey: cfg.turnstileSiteKey,
+              theme: 'dark',
+              callback: function (token) {
+                window.__turnstileToken = token;
+              },
+              'expired-callback': function () {
+                window.__turnstileToken = null;
+              }
+            });
+          };
+          document.head.appendChild(s);
+        })
+        .catch(function () {});
       dropzone.addEventListener('click', (e) => {
         if (e.target.closest('.btn')) return;
         fileInput.click();

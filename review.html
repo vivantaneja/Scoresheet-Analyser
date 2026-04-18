@@ -312,6 +312,16 @@
 
     const LS_EXTRACT_KEY = 'scoresheetAnalyser:lastExtract';
 
+    /** Escape strings for HTML text and double-quoted attributes (mitigates XSS from model/API data). */
+    function escapeHtml(s) {
+      return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     function isLikelyExtracted(obj) {
       if (!obj || typeof obj !== 'object') return false;
       if (String(obj.teamAName || '').trim() !== '') return true;
@@ -324,7 +334,7 @@
     }
 
     function getData() {
-      return fetch('/api/data').then(r => r.json());
+      return fetch('/api/data', { credentials: 'same-origin' }).then(r => r.json());
     }
 
     function getDataPreferLocal() {
@@ -342,7 +352,12 @@
     }
 
     function saveData(payload) {
-      return fetch('/api/data', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      return fetch('/api/data', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        credentials: 'same-origin'
+      });
     }
 
     function showStatus(msg, isError) {
@@ -510,7 +525,7 @@
       ];
       const teamAName = (data.teamAName || 'Team A').trim() || 'Team A';
       const teamBName = (data.teamBName || 'Team B').trim() || 'Team B';
-      wrap.innerHTML = '<table class="r1-quarter-table"><thead><tr><th>Quarter</th><th>' + String(teamAName).replace(/</g, '&lt;') + '</th><th>' + String(teamBName).replace(/</g, '&lt;') + '</th></tr></thead><tbody>' + rows.join('') + '</tbody></table>';
+      wrap.innerHTML = '<table class="r1-quarter-table"><thead><tr><th>Quarter</th><th>' + escapeHtml(teamAName) + '</th><th>' + escapeHtml(teamBName) + '</th></tr></thead><tbody>' + rows.join('') + '</tbody></table>';
     }
 
     // Resolve jersey to a roster kit number for the team that scored. Only try misread (e.g. 1/7) if there is no player with that number on that team; then at most one single-digit substitution that matches a roster number.
@@ -675,8 +690,27 @@
       function row(teamKey, jersey, name, stats) {
         const p1 = stats.p1 || 0, p2 = stats.p2 || 0, p3 = stats.p3 || 0;
         const total = p1 + p2 * 2 + p3 * 3;
-        const esc = (v) => (v != null ? String(v) : '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-        return '<tr data-team="' + teamKey + '" data-jersey="' + esc(jersey) + '"><td>' + esc(name || ('#' + jersey)) + '</td><td class="num">' + jersey + '</td><td class="num"><input type="number" class="player-pts" data-pt="1" min="0" value="' + p1 + '" /></td><td class="num"><input type="number" class="player-pts" data-pt="2" min="0" value="' + p2 + '" /></td><td class="num"><input type="number" class="player-pts" data-pt="3" min="0" value="' + p3 + '" /></td><td class="num"><strong class="player-total">' + total + '</strong></td></tr>';
+        const jEsc = escapeHtml(jersey);
+        const display = name != null && String(name).trim() !== '' ? name : ('#' + jersey);
+        return (
+          '<tr data-team="' +
+          teamKey +
+          '" data-jersey="' +
+          jEsc +
+          '"><td>' +
+          escapeHtml(display) +
+          '</td><td class="num">' +
+          jEsc +
+          '</td><td class="num"><input type="number" class="player-pts" data-pt="1" min="0" value="' +
+          escapeHtml(String(p1)) +
+          '" /></td><td class="num"><input type="number" class="player-pts" data-pt="2" min="0" value="' +
+          escapeHtml(String(p2)) +
+          '" /></td><td class="num"><input type="number" class="player-pts" data-pt="3" min="0" value="' +
+          escapeHtml(String(p3)) +
+          '" /></td><td class="num"><strong class="player-total">' +
+          escapeHtml(String(total)) +
+          '</strong></td></tr>'
+        );
       }
       const teamAName = (data.teamAName || 'Team A').trim() || 'Team A';
       const teamBName = (data.teamBName || 'Team B').trim() || 'Team B';
@@ -706,10 +740,9 @@
         if (seenB.has(jerseyStatKey(jersey))) return;
         tbodyB += row('B', jersey, null, byTeamJersey.B[jersey]);
       });
-      const esc = (v) => (v != null ? String(v) : '').replace(/</g, '&lt;');
       wrap.innerHTML =
-        '<div class="r1-player-section"><h4>' + esc(teamAName) + '</h4><table class="r1-player-table"><thead><tr><th>Player</th><th>#</th><th class="num">1pt</th><th class="num">2pt</th><th class="num">3pt</th><th class="num">Total</th></tr></thead><tbody>' + (tbodyA || '<tr><td colspan="6">No scoring data</td></tr>') + '</tbody></table></div>' +
-        '<div class="r1-player-section"><h4>' + esc(teamBName) + '</h4><table class="r1-player-table"><thead><tr><th>Player</th><th>#</th><th class="num">1pt</th><th class="num">2pt</th><th class="num">3pt</th><th class="num">Total</th></tr></thead><tbody>' + (tbodyB || '<tr><td colspan="6">No scoring data</td></tr>') + '</tbody></table></div>';
+        '<div class="r1-player-section"><h4>' + escapeHtml(teamAName) + '</h4><table class="r1-player-table"><thead><tr><th>Player</th><th>#</th><th class="num">1pt</th><th class="num">2pt</th><th class="num">3pt</th><th class="num">Total</th></tr></thead><tbody>' + (tbodyA || '<tr><td colspan="6">No scoring data</td></tr>') + '</tbody></table></div>' +
+        '<div class="r1-player-section"><h4>' + escapeHtml(teamBName) + '</h4><table class="r1-player-table"><thead><tr><th>Player</th><th>#</th><th class="num">1pt</th><th class="num">2pt</th><th class="num">3pt</th><th class="num">Total</th></tr></thead><tbody>' + (tbodyB || '<tr><td colspan="6">No scoring data</td></tr>') + '</tbody></table></div>';
       wrap.querySelectorAll('input.player-pts').forEach(inp => {
         inp.addEventListener('input', updatePlayerRowTotal);
         inp.addEventListener('change', updatePlayerRowTotal);
@@ -742,7 +775,6 @@
       const r3A = data.r3FinalScoreTeamA ?? 0;
       const r3B = data.r3FinalScoreTeamB ?? 0;
       const winningName = (data.r3WinningTeamName || '').trim();
-      const esc = (v) => String(v != null ? v : '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
       const summaryItems = [];
       let ok = true;
       if (r3A > 0 || r3B > 0) {
@@ -754,7 +786,7 @@
         }
       }
       if (summaryItems.length === 0) summaryItems.push('<li>No R3 final box in data to compare (optional on sheet).</li>');
-      if (winningName) summaryItems.push('<li>Winning team (final): <strong>' + esc(winningName) + '</strong>.</li>');
+      if (winningName) summaryItems.push('<li>Winning team (final): <strong>' + escapeHtml(winningName) + '</strong>.</li>');
       const title = ok ? 'Cross-check passed' : 'Cross-check needs attention';
       const stateClass = ok ? 'ok' : 'mismatch';
       wrap.innerHTML =
@@ -793,17 +825,16 @@
       const list = document.getElementById(listId);
       if (!list) return;
       const players = data[teamKey] || [];
-      const esc = (v) => (v != null ? String(v) : '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
       const quartersValue = (p) => ['playerInQuarter1', 'playerInQuarter2', 'playerInQuarter3', 'playerInQuarter4'].map((k, j) => (p[k] && String(p[k]).trim()) ? (j + 1) : null).filter(Boolean).join(' ');
       const foulsValue = (p) => ['foul1', 'foul2', 'foul3', 'foul4', 'foul5'].map(k => (p[k] && String(p[k]).trim()) ? p[k] : null).filter(Boolean).join(', ');
       list.innerHTML = '<table class="roster-table"><thead><tr><th class="col-no">Jersey</th><th class="col-player">Player</th><th class="col-bipin">BIPIN</th><th class="col-quarters">Quarters</th><th class="col-fouls">Fouls</th><th class="col-remove"></th></tr></thead><tbody>' +
         players.map((p, i) => {
           return `<tr data-team="${teamKey}" data-index="${i}">
-            <td class="col-no"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="kitNo" value="${esc(p.kitNo)}" placeholder="No." /></td>
-            <td class="col-player"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="playerName" value="${esc(p.playerName)}" placeholder="Name" /></td>
-            <td class="col-bipin"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="bipinNo" value="${esc(p.bipinNo)}" placeholder="PIN" /></td>
-            <td class="col-quarters"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="quarters" value="${esc(quartersValue(p))}" placeholder="1 2 4" title="Quarters played: 1 2 4 or Q1 Q2 Q4" /></td>
-            <td class="col-fouls"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="fouls" value="${esc(foulsValue(p))}" placeholder="P, P2, -" title="P P1 P2 P3 U D T -" /></td>
+            <td class="col-no"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="kitNo" value="${escapeHtml(p.kitNo)}" placeholder="No." /></td>
+            <td class="col-player"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="playerName" value="${escapeHtml(p.playerName)}" placeholder="Name" /></td>
+            <td class="col-bipin"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="bipinNo" value="${escapeHtml(p.bipinNo)}" placeholder="PIN" /></td>
+            <td class="col-quarters"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="quarters" value="${escapeHtml(quartersValue(p))}" placeholder="1 2 4" title="Quarters played: 1 2 4 or Q1 Q2 Q4" /></td>
+            <td class="col-fouls"><input type="text" data-team="${teamKey}" data-index="${i}" data-key="fouls" value="${escapeHtml(foulsValue(p))}" placeholder="P, P2, -" title="P P1 P2 P3 U D T -" /></td>
             <td class="col-remove"><button type="button" class="remove-player" data-team="${teamKey}" data-index="${i}">×</button></td>
           </tr>`;
         }).join('') + '</tbody></table>';

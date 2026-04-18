@@ -1,4 +1,5 @@
 const path = require('path');
+const crypto = require('crypto');
 require('dotenv').config({
   path: path.join(__dirname, '.env'),
   override: true
@@ -6,12 +7,14 @@ require('dotenv').config({
 const express = require('express');
 const fs = require('fs');
 const multer = require('multer');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const IS_VERCEL = !!process.env.VERCEL;
 const WORK_DIR = IS_VERCEL ? '/tmp' : __dirname;
-const DATA_FILE = path.join(WORK_DIR, 'data.json');
+/** Local-only per-user JSON files; dot-prefixed so express.static does not serve them. */
+const USER_DATA_DIR = path.join(__dirname, '.user-data');
 const EXTRACTION_DEBUG_FILE = path.join(WORK_DIR, 'last-extraction.json');
 const SCHEMA_FILE = path.join(__dirname, 'schema.json');
 const PROMPT_FILE = path.join(__dirname, 'extraction-prompt.txt');
@@ -66,6 +69,7 @@ const DEFAULT_DATA = {
 };
 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+if (!fs.existsSync(USER_DATA_DIR)) fs.mkdirSync(USER_DATA_DIR, { recursive: true });
 
 if (!fs.existsSync(PROMPT_FILE)) {
   console.warn(
@@ -578,9 +582,11 @@ async function extractWithChatCompletionsVision(filePath, originalName, multerMi
     throw new Error('Vision chat API returned no message content.');
   }
   const parsed = parseJsonFromResponse(content.trim().replace(/^```json?\s*|\s*```$/g, ''));
-  try {
-    fs.writeFileSync(EXTRACTION_DEBUG_FILE, JSON.stringify(parsed, null, 2), 'utf8');
-  } catch (e) {}
+  if (process.env.EXTRACTION_DEBUG === '1' && !IS_VERCEL) {
+    try {
+      fs.writeFileSync(EXTRACTION_DEBUG_FILE, JSON.stringify(parsed, null, 2), 'utf8');
+    } catch (e) {}
+  }
   return normalizeExtracted(parsed);
 }
 
@@ -601,6 +607,264 @@ async function extractWithGroq(filePath, originalName, multerMime) {
   });
 }
 
+let redis = null;
+try {
+  const rUrl = process.env.UPSTASH_REDIS_REST_URL && String(process.env.UPSTASH_REDIS_REST_URL).trim();
+  const rTok = process.env.UPSTASH_REDIS_REST_TOKEN && String(process.env.UPSTASH_REDIS_REST_TOKEN).trim();
+  if (rUrl && rTok) {
+    const { Redis } = require('@upstash/redis');
+    redis = new Redis({ url: rUrl, token: rTok });
+  }
+} catch (e) {
+  console.warn('Upstash Redis init failed:', e.message);
+}
+
+/** Distributed upload caps (requires Redis). Env: UPLOAD_RATELIMIT_MAX (default 20), UPLOAD_RATELIMIT_WINDOW (default "1 h"). */
+let uploadRatelimit = null;
+if (redis) {
+  try {
+    const { Ratelimit } = require('@upstash/ratelimit');
+    const max = Math.max(1, parseInt(String(process.env.UPLOAD_RATELIMIT_MAX || '20').trim(), 10) || 20);
+    const windowStr = (process.env.UPLOAD_RATELIMIT_WINDOW || '1 h').trim();
+    uploadRatelimit = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(max, windowStr),
+      analytics: true,
+      prefix: 'ratelimit:upload'
+    });
+  } catch (e) {
+    console.warn('@upstash/ratelimit init failed:', e.message);
+  }
+}
+
+const SESSION_COOKIE_NAME = 'sa_session';
+const SESSION_MAX_AGE_SEC = 60 * 60 * 24 * 400;
+/** Accepts UUID v4 from crypto.randomUUID() */
+const SESSION_USER_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SCORESHEET_KEY = (userId) => 'scoresheet:' + userId;
+
+function getSessionSecret() {
+  const s = process.env.SESSION_SECRET && String(process.env.SESSION_SECRET).trim();
+  if (s && s.length >= 32) return s;
+  if (IS_VERCEL || process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'SESSION_SECRET must be set to a random string of at least 32 characters (required for public multi-user sessions).'
+    );
+  }
+  return 'dev-unsafe-session-secret-min-32-chars!!';
+}
+
+function signUserId(userId, secret) {
+  return crypto.createHmac('sha256', secret).update(userId).digest('base64url');
+}
+
+function verifySessionToken(token) {
+  if (!token || typeof token !== 'string') return null;
+  const dot = token.indexOf('.');
+  if (dot < 1) return null;
+  const userId = token.slice(0, dot);
+  const sig = token.slice(dot + 1);
+  if (!SESSION_USER_RE.test(userId) || !sig) return null;
+  let expected;
+  try {
+    expected = signUserId(userId, getSessionSecret());
+  } catch (e) {
+    return null;
+  }
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  return userId;
+}
+
+function readCookie(header, name) {
+  if (!header) return null;
+  const parts = String(header).split(';');
+  for (const p of parts) {
+    const idx = p.indexOf('=');
+    if (idx === -1) continue;
+    const k = p.slice(0, idx).trim();
+    if (k !== name) continue;
+    return decodeURIComponent(p.slice(idx + 1).trim());
+  }
+  return null;
+}
+
+function buildSessionCookie(tokenValue) {
+  const bits = [
+    `${SESSION_COOKIE_NAME}=${encodeURIComponent(tokenValue)}`,
+    'Path=/',
+    'HttpOnly',
+    `Max-Age=${SESSION_MAX_AGE_SEC}`,
+    'SameSite=Lax'
+  ];
+  if (IS_VERCEL || process.env.NODE_ENV === 'production') bits.push('Secure');
+  return bits.join('; ');
+}
+
+function sessionMiddleware(req, res, next) {
+  try {
+    const secret = getSessionSecret();
+    const raw = readCookie(req.headers.cookie, SESSION_COOKIE_NAME);
+    let userId = raw && verifySessionToken(raw);
+    if (!userId) {
+      userId = crypto.randomUUID();
+      const token = userId + '.' + signUserId(userId, secret);
+      res.append('Set-Cookie', buildSessionCookie(token));
+    }
+    req.userId = userId;
+    next();
+  } catch (e) {
+    res.status(500).type('json').send(JSON.stringify({ error: e.message || String(e) }));
+  }
+}
+
+function persistenceAvailable() {
+  return !!(redis || !IS_VERCEL);
+}
+
+function persistenceErrorResponse() {
+  if (IS_VERCEL && !redis) {
+    return {
+      error:
+        'Database not configured. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN in the host environment for multi-user storage on Vercel.'
+    };
+  }
+  return { error: 'Storage unavailable.' };
+}
+
+async function loadUserData(userId) {
+  if (redis) {
+    const raw = await redis.get(SCORESHEET_KEY(userId));
+    if (raw == null) return null;
+    const str = typeof raw === 'string' ? raw : JSON.stringify(raw);
+    return JSON.parse(str);
+  }
+  const fp = path.join(USER_DATA_DIR, userId + '.json');
+  try {
+    const raw = fs.readFileSync(fp, 'utf8').trim();
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw e;
+  }
+}
+
+async function saveUserData(userId, data) {
+  if (redis) {
+    await redis.set(SCORESHEET_KEY(userId), JSON.stringify(data));
+    return;
+  }
+  const fp = path.join(USER_DATA_DIR, userId + '.json');
+  fs.writeFileSync(fp, JSON.stringify(data, null, 2), 'utf8');
+}
+
+async function verifyTurnstileToken(token, remoteIp) {
+  const secret = process.env.TURNSTILE_SECRET_KEY && String(process.env.TURNSTILE_SECRET_KEY).trim();
+  if (!secret) return true;
+  if (!token || typeof token !== 'string' || !token.trim()) return false;
+  const body = new URLSearchParams();
+  body.set('secret', secret);
+  body.set('response', token.trim());
+  if (remoteIp) body.set('remoteip', String(remoteIp).slice(0, 45));
+  const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString()
+  });
+  let data;
+  try {
+    data = await res.json();
+  } catch (e) {
+    return false;
+  }
+  return data && data.success === true;
+}
+
+async function uploadRatelimitMiddleware(req, res, next) {
+  if (!uploadRatelimit) return next();
+  try {
+    const id = String(req.ip || 'unknown') + ':' + String(req.userId || '');
+    const { success, reset, pending } = await uploadRatelimit.limit(id);
+    if (pending && typeof pending.then === 'function') {
+      void pending.catch(() => {});
+    }
+    if (success) return next();
+    const resetMs = typeof reset === 'number' ? reset : Date.now() + 60 * 1000;
+    const retrySec = Math.max(1, Math.ceil((resetMs - Date.now()) / 1000));
+    res.set('Retry-After', String(retrySec));
+    return res.status(429).json({
+      error: 'Too many uploads. Please try again later.',
+      retryAfterSeconds: retrySec
+    });
+  } catch (e) {
+    console.error('uploadRatelimit:', e.message);
+    return next();
+  }
+}
+
+function buildScoresheetFromRequestBody(body) {
+  const b = body || {};
+  const data = { ...DEFAULT_DATA };
+  for (const k of Object.keys(DEFAULT_DATA)) {
+    if (b[k] == null) continue;
+    if (k === 'teamAPlayers' || k === 'teamBPlayers') {
+      data[k] = Array.isArray(b[k]) ? b[k].slice(0, MAX_PLAYERS_PER_TEAM).map(normalizePlayer) : [];
+    } else if (k === 'runningScoreEvents') {
+      data[k] = normalizeRunningScoreEvents(b[k] || []);
+    } else if (k === 'periodScoresTeamA' || k === 'periodScoresTeamB') {
+      data[k] = normalizePeriodScores(b[k]);
+    } else if (k === 'finalScoreTeamA' || k === 'finalScoreTeamB') {
+      const n = parseInt(String(b[k]), 10);
+      data[k] = Number.isNaN(n) || n < 0 ? 0 : n;
+    } else if (k === 'pointsPerColumn') {
+      const n = parseInt(String(b[k]), 10);
+      data[k] = n === 60 ? 60 : 40;
+    } else if (k === 'r2PeriodScoresTeamA' || k === 'r2PeriodScoresTeamB') {
+      data[k] = normalizePeriodScores(b[k]);
+    } else if (k === 'r3FinalScoreTeamA' || k === 'r3FinalScoreTeamB') {
+      const n = parseInt(String(b[k]), 10);
+      data[k] = Number.isNaN(n) || n < 0 ? 0 : n;
+    } else if (k === 'r3WinningTeamName') {
+      data[k] = (b[k] != null ? String(b[k]) : '').trim();
+    } else if (k === 'playerScoringOverrides') {
+      data[k] = normalizePlayerScoringOverrides(b[k]);
+    } else if (INTEGER_KEYS.includes(k)) {
+      const n = parseInt(String(b[k]), 10);
+      data[k] = Number.isNaN(n) ? 0 : n;
+    } else {
+      data[k] = String(b[k]);
+    }
+  }
+  return data;
+}
+
+const apiReadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 400,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const apiWriteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many uploads from this IP. Try again in a while.' }
+});
+
+app.set('trust proxy', 1);
+app.use(sessionMiddleware);
 app.use(express.json({ limit: '1mb' }));
 
 // Explicit routes so Vercel/serverless serves HTML (static may not see project root)
@@ -616,6 +880,14 @@ const sendHtml = (filename, req, res) => {
 app.get('/', (req, res) => sendHtml('index.html', req, res));
 app.get('/index.html', (req, res) => sendHtml('index.html', req, res));
 app.get('/review.html', (req, res) => sendHtml('review.html', req, res));
+
+app.get('/api/config', (req, res) => {
+  const siteKey = process.env.TURNSTILE_SITE_KEY && String(process.env.TURNSTILE_SITE_KEY).trim();
+  res.json({
+    turnstileSiteKey: siteKey || ''
+  });
+});
+
 const demoPath = path.join(__dirname, 'assets', 'demo-scoresheet.png');
 app.get('/assets/demo-scoresheet.png', (req, res) => {
   const p = fs.existsSync(demoPath) ? demoPath : path.join(process.cwd(), 'assets', 'demo-scoresheet.png');
@@ -624,61 +896,28 @@ app.get('/assets/demo-scoresheet.png', (req, res) => {
 });
 app.use(express.static(__dirname));
 
-app.get('/api/data', (req, res) => {
+app.get('/api/data', apiReadLimiter, async (req, res) => {
+  if (!persistenceAvailable()) {
+    return res.status(503).json(persistenceErrorResponse());
+  }
   try {
-    const raw = fs.readFileSync(DATA_FILE, 'utf8').trim();
-    if (!raw) {
-      fs.writeFileSync(DATA_FILE, JSON.stringify(DEFAULT_DATA, null, 2), 'utf8');
-      return res.json(DEFAULT_DATA);
-    }
-    const data = JSON.parse(raw);
-    if (data.$schema) return res.json(DEFAULT_DATA);
-    const merged = { ...DEFAULT_DATA, ...data };
+    const stored = await loadUserData(req.userId);
+    if (!stored) return res.json(DEFAULT_DATA);
+    if (stored.$schema) return res.json(DEFAULT_DATA);
+    const merged = { ...DEFAULT_DATA, ...stored };
     res.json(merged);
   } catch (err) {
-    if (err.code === 'ENOENT') {
-      fs.writeFileSync(DATA_FILE, JSON.stringify(DEFAULT_DATA, null, 2), 'utf8');
-      return res.json(DEFAULT_DATA);
-    }
     res.status(500).json({ error: err.message });
   }
 });
 
-app.put('/api/data', (req, res) => {
+app.put('/api/data', apiWriteLimiter, async (req, res) => {
+  if (!persistenceAvailable()) {
+    return res.status(503).json(persistenceErrorResponse());
+  }
   try {
-    const body = req.body || {};
-    const data = { ...DEFAULT_DATA };
-    for (const k of Object.keys(DEFAULT_DATA)) {
-      if (body[k] == null) continue;
-      if (k === 'teamAPlayers' || k === 'teamBPlayers') {
-        data[k] = Array.isArray(body[k]) ? body[k].slice(0, MAX_PLAYERS_PER_TEAM).map(normalizePlayer) : [];
-      } else if (k === 'runningScoreEvents') {
-        data[k] = normalizeRunningScoreEvents(body[k] || []);
-      } else if (k === 'periodScoresTeamA' || k === 'periodScoresTeamB') {
-        data[k] = normalizePeriodScores(body[k]);
-      } else if (k === 'finalScoreTeamA' || k === 'finalScoreTeamB') {
-        const n = parseInt(String(body[k]), 10);
-        data[k] = Number.isNaN(n) || n < 0 ? 0 : n;
-      } else if (k === 'pointsPerColumn') {
-        const n = parseInt(String(body[k]), 10);
-        data[k] = n === 60 ? 60 : 40;
-      } else if (k === 'r2PeriodScoresTeamA' || k === 'r2PeriodScoresTeamB') {
-        data[k] = normalizePeriodScores(body[k]);
-      } else if (k === 'r3FinalScoreTeamA' || k === 'r3FinalScoreTeamB') {
-        const n = parseInt(String(body[k]), 10);
-        data[k] = Number.isNaN(n) || n < 0 ? 0 : n;
-      } else if (k === 'r3WinningTeamName') {
-        data[k] = (body[k] != null ? String(body[k]) : '').trim();
-      } else if (k === 'playerScoringOverrides') {
-        data[k] = normalizePlayerScoringOverrides(body[k]);
-      } else if (INTEGER_KEYS.includes(k)) {
-        const n = parseInt(String(body[k]), 10);
-        data[k] = Number.isNaN(n) ? 0 : n;
-      } else {
-        data[k] = String(body[k]);
-      }
-    }
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+    const data = buildScoresheetFromRequestBody(req.body);
+    await saveUserData(req.userId, data);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -691,15 +930,37 @@ function unlinkUploadSilently(filePath) {
   } catch (e) {}
 }
 
-app.post('/api/upload', upload.single('scoresheet'), async (req, res) => {
+app.post(
+  '/api/upload',
+  uploadLimiter,
+  uploadRatelimitMiddleware,
+  upload.single('scoresheet'),
+  async (req, res) => {
   const filePath = req.file && req.file.path;
   try {
+    if (!persistenceAvailable()) {
+      return res.status(503).json(persistenceErrorResponse());
+    }
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const turnstileSecret = process.env.TURNSTILE_SECRET_KEY && String(process.env.TURNSTILE_SECRET_KEY).trim();
+    if (turnstileSecret) {
+      const token =
+        (req.body && (req.body['cf-turnstile-response'] || req.body['cf_turnstile_response'])) || '';
+      const ok = await verifyTurnstileToken(token, req.ip).catch(() => false);
+      if (!ok) {
+        unlinkUploadSilently(filePath);
+        return res.status(400).json({
+          error: 'Human verification failed or expired. Refresh the page and try again.'
+        });
+      }
+    }
+
     const originalName = req.file.originalname || '';
     let extracted = null;
     try {
       extracted = await extractWithGroq(filePath, originalName, req.file.mimetype);
-      fs.writeFileSync(DATA_FILE, JSON.stringify(extracted, null, 2), 'utf8');
+      await saveUserData(req.userId, extracted);
     } catch (extractErr) {
       unlinkUploadSilently(filePath);
       const msg = extractErr?.message || extractErr?.toString?.() || 'Extraction failed';
@@ -735,7 +996,8 @@ app.post('/api/upload', upload.single('scoresheet'), async (req, res) => {
     unlinkUploadSilently(filePath);
     res.status(500).json({ error: err.message });
   }
-});
+  }
+);
 
 if (!IS_VERCEL) {
   app.listen(PORT, () => {
@@ -743,6 +1005,20 @@ if (!IS_VERCEL) {
     console.log('Extraction: Groq (vision + JSON)');
     console.log('GROQ_API_KEY:', process.env.GROQ_API_KEY ? 'set' : 'NOT SET');
     console.log('GROQ_MODEL:', (process.env.GROQ_MODEL || GROQ_DEFAULT_VISION_MODEL).trim());
+    console.log('Per-user store:', redis ? 'Upstash Redis' : 'local .user-data/*.json');
+    console.log('Upload ratelimit (Upstash):', uploadRatelimit ? 'on' : 'off (set UPSTASH_REDIS_* for distributed limits)');
+    const tsSec = !!(process.env.TURNSTILE_SECRET_KEY && String(process.env.TURNSTILE_SECRET_KEY).trim());
+    const tsSite = !!(process.env.TURNSTILE_SITE_KEY && String(process.env.TURNSTILE_SITE_KEY).trim());
+    console.log('Turnstile:', tsSec ? 'verify on' : 'off', tsSite ? '(site key set)' : '');
+    if (tsSec && !tsSite) {
+      console.warn('Turnstile: TURNSTILE_SECRET_KEY is set but TURNSTILE_SITE_KEY is missing — uploads will fail until both are set.');
+    }
+    try {
+      getSessionSecret();
+      console.log('SESSION_SECRET: ok');
+    } catch (e) {
+      console.error('SESSION_SECRET:', e.message);
+    }
   });
 }
 
