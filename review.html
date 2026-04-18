@@ -292,6 +292,12 @@
       'teamAFoulsPeriod1', 'teamAFoulsPeriod2', 'teamAFoulsPeriod3', 'teamAFoulsPeriod4',
       'teamBTimeoutsFirstHalf', 'teamBTimeoutsSecondHalf', 'teamBTimeoutsExtraPeriods',
       'teamBFoulsPeriod1', 'teamBFoulsPeriod2', 'teamBFoulsPeriod3', 'teamBFoulsPeriod4'];
+    /** Optional fields from extraction (L1/L2 staff, colours, L3); preserved on save without dedicated form inputs. */
+    const EXTRA_PERSIST_FIELDS = [
+      'teamAColour', 'teamBColour',
+      'teamACoachName', 'teamACoachBipin', 'teamAAssistantCoachName',
+      'teamBCoachName', 'teamBCoachBipin', 'teamBAssistantCoachName'
+    ];
     const INTEGER_FIELDS = new Set(FIELDS.filter(f => f.includes('Timeouts') || f.includes('Fouls')));
     const PLAYER_KEYS = ['bipinNo', 'playerInQuarter1', 'playerInQuarter2', 'playerInQuarter3', 'playerInQuarter4', 'playerName', 'kitNo', 'foul1', 'foul2', 'foul3', 'foul4', 'foul5'];
 
@@ -399,6 +405,10 @@
       payload.r3FinalScoreTeamB = parseInt(String(data.r3FinalScoreTeamB ?? 0), 10) || 0;
       payload.r3WinningTeamName = (data.r3WinningTeamName != null ? String(data.r3WinningTeamName) : '').trim();
       payload.playerScoringOverrides = data.playerScoringOverrides && typeof data.playerScoringOverrides === 'object' ? data.playerScoringOverrides : { A: {}, B: {} };
+      EXTRA_PERSIST_FIELDS.forEach((k) => {
+        payload[k] = (data[k] != null ? String(data[k]) : '').trim();
+      });
+      payload.l3Officials = Array.isArray(data.l3Officials) ? data.l3Officials : [];
       saveData(payload)
         .then(() => {
           try {
@@ -910,6 +920,10 @@
             data.r3FinalScoreTeamB = typeof d.r3FinalScoreTeamB === 'number' ? d.r3FinalScoreTeamB : parseInt(String(d.r3FinalScoreTeamB || 0), 10) || 0;
             data.r3WinningTeamName = (d.r3WinningTeamName != null ? String(d.r3WinningTeamName) : '').trim();
             data.playerScoringOverrides = (d.playerScoringOverrides && typeof d.playerScoringOverrides === 'object') ? d.playerScoringOverrides : { A: {}, B: {} };
+            EXTRA_PERSIST_FIELDS.forEach((k) => {
+              data[k] = d[k] != null ? String(d[k]) : '';
+            });
+            data.l3Officials = Array.isArray(d.l3Officials) ? d.l3Officials : [];
           }
           fillForm();
         })

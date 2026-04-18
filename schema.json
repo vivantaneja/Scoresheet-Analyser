@@ -1,6 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Basketball Match",
+  "description": "Basketball Ireland–style scoresheet: page split L (left) and R (right). L = L1 Team A, L2 Team B, L3 officials. R = R1 running score, R2 period scores, R3 final. Header spans full width above L/R. JSON keys map to these regions as described in each property.",
   "type": "object",
   "properties": {
     "teamAName": {
@@ -41,7 +42,56 @@
     "referee2": {
       "type": "string",
       "minLength": 1,
-      "description": "Name of the second referee"
+      "description": "Name of the second referee (header row 3; L3 may repeat officials)"
+    },
+    "teamAColour": {
+      "type": "string",
+      "description": "L1: Team A kit colour after 'Colour' (team header block)."
+    },
+    "teamBColour": {
+      "type": "string",
+      "description": "L2: Team B kit colour after 'Colour'."
+    },
+    "teamACoachName": {
+      "type": "string",
+      "description": "L1 staff row: head coach name below player table."
+    },
+    "teamACoachBipin": {
+      "type": "string",
+      "description": "L1: coach BIPIN if shown beside coach name."
+    },
+    "teamAAssistantCoachName": {
+      "type": "string",
+      "description": "L1: assistant coach name (often no BIPIN)."
+    },
+    "teamBCoachName": {
+      "type": "string",
+      "description": "L2: head coach name."
+    },
+    "teamBCoachBipin": {
+      "type": "string",
+      "description": "L2: coach BIPIN if shown."
+    },
+    "teamBAssistantCoachName": {
+      "type": "string",
+      "description": "L2: assistant coach name."
+    },
+    "l3Officials": {
+      "type": "array",
+      "description": "L3: officials table — referee 1 & 2, scorekeeper, time keeper, 24s operator; captain signature row may have no BIPIN.",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "One of: referee1, referee2, scorekeeper, timekeeper, shotClock24s, captainSignature"
+          },
+          "bipinNo": { "type": "string", "description": "Official BIPIN; empty for captain signature if no column." },
+          "name": { "type": "string", "description": "Printed name." },
+          "initials": { "type": "string", "description": "Initials column if present." }
+        }
+      }
     },
     "teamATimeoutsFirstHalf": {
       "type": "integer",
@@ -128,7 +178,7 @@
     "teamAPlayers": {
       "type": "array",
       "maxItems": 12,
-      "description": "Player table (L1): one object per player; max 12 players. Columns: BIPIN No., Player In (4 boxes Q1–Q4), Player Name, Kit No., Fouls (5 boxes). Record each row.",
+      "description": "L1 player table only (home / Team A). One object per row; max 12. Columns: BIPIN, Player In ×4, Name, Kit No., Fouls ×5.",
       "items": {
         "type": "object",
         "properties": {
@@ -150,7 +200,7 @@
     "teamBPlayers": {
       "type": "array",
       "maxItems": 12,
-      "description": "Player table (L2): same structure as teamAPlayers for Team B; max 12 players.",
+      "description": "L2 player table (away / Team B). Same columns as teamAPlayers.",
       "items": {
         "type": "object",
         "properties": {
@@ -171,7 +221,7 @@
     },
     "runningScoreEvents": {
       "type": "array",
-      "description": "Running score (R1): L1 roster = Team A only; L2 = Team B only. Grid columns: A jersey | A mark | B mark | B jersey. Each mark on the A side → team A; each mark on the B side → team B. Do not put Team B marks under team A. One object per marked point, sorted by point.",
+      "description": "R1 running score. Inner columns 2–3 are point marks; outer 1 and 4 are Team A and Team B jersey numbers. Each scoring mark → one event; team A side only for L1/home; team B for L2/away. Ignore scribbled-out cells after the game. point = score sequence (1st basket, 2nd, …), not always the printed row number.",
       "items": {
         "type": "object",
         "properties": {
@@ -199,7 +249,7 @@
     },
     "finalScoreTeamA": { "type": "integer", "minimum": 0, "description": "Team A final score from the printed final on the sheet (authoritative for checking running-score types)." },
     "finalScoreTeamB": { "type": "integer", "minimum": 0, "description": "Team B final score from the printed final (authoritative for checking running-score types)." },
-    "pointsPerColumn": { "type": "integer", "minimum": 40, "description": "Points per main column in R1 grid (40 or 60)." },
+    "pointsPerColumn": { "type": "integer", "enum": [40, 60], "description": "R1: points span per main column block (40 or 60)." },
     "r2PeriodScoresTeamA": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "integer", "minimum": 0 }, "description": "R2 – Period Scores: points scored by Team A in each period only (Q1, Q2, Q3, Q4), not cumulative. Omit if R2 not on sheet." },
     "r2PeriodScoresTeamB": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "integer", "minimum": 0 }, "description": "R2 – Period Scores: points scored by Team B in each period only. Omit if not on sheet." },
     "r3FinalScoreTeamA": { "type": "integer", "minimum": 0, "description": "R3 – Final: Team A total final score (all periods and extra periods). Omit if R3 not on sheet." },

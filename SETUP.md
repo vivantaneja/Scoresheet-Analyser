@@ -18,7 +18,7 @@ In `.env`:
 
 1. **`GROQ_API_KEY`**: from [Groq Console → API Keys](https://console.groq.com/keys).
 2. Optional **`GROQ_MODEL`**: default `meta-llama/llama-4-scout-17b-16e-instruct` ([vision docs](https://console.groq.com/docs/vision)).
-3. Optional **`CHAT_VISION_MAX_TOKENS`**: default `4096` (capped at `8192`; higher defaults can cause Groq 400 on vision + long prompts).
+3. Optional **`CHAT_VISION_MAX_TOKENS`**: default `8192` (Groq cap). Large scoresheets need headroom for valid JSON with `json_object` mode; if the API rejects max output, try `4096`.
 4. Optional **`SESSION_SECRET`**: 32+ random characters. Required when `NODE_ENV=production`; omitted locally uses a dev-only default.
 5. Optional **`UPSTASH_REDIS_REST_URL`** / **`UPSTASH_REDIS_REST_TOKEN`**: omit locally (uses **`.user-data/`**); required on Vercel for persistence.
 

@@ -65,6 +65,15 @@ const DEFAULT_DATA = {
   r3FinalScoreTeamA: 0,
   r3FinalScoreTeamB: 0,
   r3WinningTeamName: '',
+  teamAColour: '',
+  teamBColour: '',
+  teamACoachName: '',
+  teamACoachBipin: '',
+  teamAAssistantCoachName: '',
+  teamBCoachName: '',
+  teamBCoachBipin: '',
+  teamBAssistantCoachName: '',
+  l3Officials: [],
   playerScoringOverrides: { A: {}, B: {} }
 };
 
@@ -97,8 +106,12 @@ const GROQ_CHAT_COMPLETIONS_URL = 'https://api.groq.com/openai/v1/chat/completio
 const GROQ_DEFAULT_VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 /** Groq hard cap for `max_completion_tokens` on many models (API message references 8192). */
 const GROQ_MAX_COMPLETION_TOKENS_CAP = 8192;
-/** Default below cap: vision + long schema/prompt use input tokens, so requesting 8192 can still 400. */
-const GROQ_DEFAULT_COMPLETION_TOKENS = 4096;
+/**
+ * Default completion budget for full-sheet JSON (rosters + many runningScoreEvents).
+ * With `response_format: json_object`, truncated output fails with json_validate_failed — prefer headroom.
+ * If a model rejects max output, set CHAT_VISION_MAX_TOKENS lower (e.g. 4096).
+ */
+const GROQ_DEFAULT_COMPLETION_TOKENS = 8192;
 
 function groqMaxCompletionTokensFromEnv() {
   const raw = process.env.CHAT_VISION_MAX_TOKENS;
@@ -110,6 +123,15 @@ function groqMaxCompletionTokensFromEnv() {
     return Math.min(GROQ_MAX_COMPLETION_TOKENS_CAP, GROQ_DEFAULT_COMPLETION_TOKENS);
   }
   return Math.min(GROQ_MAX_COMPLETION_TOKENS_CAP, Math.max(256, n));
+}
+
+/** Groq JSON mode requires a complete JSON object; hitting max_completion_tokens mid-stream yields json_validate_failed. */
+function isGroqJsonOutputTruncation(rawText) {
+  const s = String(rawText || '');
+  return (
+    /json_validate_failed/i.test(s) &&
+    /max completion tokens reached|failed_generation|valid document/i.test(s)
+  );
 }
 
 function getMimeType(filePath, originalName, multerMime) {
@@ -188,18 +210,62 @@ function isKeyEcho(key, value) {
 
 const PLAYER_KEYS = ['bipinNo', 'playerInQuarter1', 'playerInQuarter2', 'playerInQuarter3', 'playerInQuarter4', 'playerName', 'kitNo', 'foul1', 'foul2', 'foul3', 'foul4', 'foul5'];
 
+/** Vision models often emit snake_case or alternate names; map them into our schema. */
+const PLAYER_FIELD_ALIASES = {
+  bipinNo: ['bipinNo', 'bipin_no', 'bipin', 'pin', 'BIPIN'],
+  playerInQuarter1: ['playerInQuarter1', 'player_in_quarter_1', 'in_q1', 'q1'],
+  playerInQuarter2: ['playerInQuarter2', 'player_in_quarter_2', 'in_q2', 'q2'],
+  playerInQuarter3: ['playerInQuarter3', 'player_in_quarter_3', 'in_q3', 'q3'],
+  playerInQuarter4: ['playerInQuarter4', 'player_in_quarter_4', 'in_q4', 'q4'],
+  playerName: ['playerName', 'player_name', 'name', 'player'],
+  kitNo: [
+    'kitNo',
+    'kit_no',
+    'kitNumber',
+    'kit_number',
+    'jersey',
+    'jerseyNumber',
+    'jersey_number',
+    'jerseyNo',
+    'jersey_no',
+    'shirtNo',
+    'shirt_no',
+    'number',
+    'playerNumber',
+    'player_no',
+    'no'
+  ],
+  foul1: ['foul1', 'foul_1'],
+  foul2: ['foul2', 'foul_2'],
+  foul3: ['foul3', 'foul_3'],
+  foul4: ['foul4', 'foul_4'],
+  foul5: ['foul5', 'foul_5']
+};
+
 function defaultPlayer() {
   const o = {};
   PLAYER_KEYS.forEach((k) => (o[k] = ''));
   return o;
 }
 
+function pickPlayerField(p, canonicalKey) {
+  const aliases = PLAYER_FIELD_ALIASES[canonicalKey] || [canonicalKey];
+  for (const ak of aliases) {
+    if (!Object.prototype.hasOwnProperty.call(p, ak)) continue;
+    const v = p[ak];
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (s !== '') return s;
+  }
+  return null;
+}
+
 function normalizePlayer(p) {
   const d = defaultPlayer();
   if (!p || typeof p !== 'object') return d;
   PLAYER_KEYS.forEach((k) => {
-    const v = p[k];
-    if (v != null && String(v).trim() !== '') d[k] = String(v).trim();
+    const v = pickPlayerField(p, k);
+    if (v != null) d[k] = v;
   });
   return d;
 }
@@ -209,6 +275,19 @@ const MAX_PLAYERS_PER_TEAM = 12;
 function normalizePlayerArray(arr) {
   if (!Array.isArray(arr)) return [];
   return arr.slice(0, MAX_PLAYERS_PER_TEAM).map(normalizePlayer);
+}
+
+function normalizeL3OfficialsArray(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.slice(0, 10).map((o) => {
+    if (!o || typeof o !== 'object') return { role: '', bipinNo: '', name: '', initials: '' };
+    return {
+      role: String(o.role ?? '').trim(),
+      bipinNo: String(o.bipinNo ?? o.bipin_no ?? '').trim(),
+      name: String(o.name ?? '').trim(),
+      initials: String(o.initials ?? '').trim()
+    };
+  });
 }
 
 /** Map model output to A/B (L1=L2 roster labels and numeric variants). */
@@ -347,7 +426,15 @@ function normalizeRunningScoreEvent(e) {
     const tn = parseInt(type, 10);
     if (!Number.isNaN(tn) && tn >= 1 && tn <= 3) type = String(tn);
   }
-  let jersey = String(e.jersey != null ? e.jersey : '').trim();
+  let jersey = '';
+  for (const k of ['jersey', 'jersey_number', 'jerseyNumber', 'kit_no', 'kitNo']) {
+    if (e[k] == null) continue;
+    const s = String(e[k]).trim();
+    if (s !== '') {
+      jersey = s;
+      break;
+    }
+  }
   if (/^\d+$/.test(jersey)) jersey = String(parseInt(jersey, 10));
   if (Number.isNaN(point) || point < 1 || point > 120) return null;
   if (team !== 'A' && team !== 'B') return null;
@@ -435,10 +522,36 @@ function normalizeExtracted(parsed) {
     teamBFoulsPeriod1: ['teamBFoulsPeriod1', 'team_b_fouls_period_1'],
     teamBFoulsPeriod2: ['teamBFoulsPeriod2', 'team_b_fouls_period_2'],
     teamBFoulsPeriod3: ['teamBFoulsPeriod3', 'team_b_fouls_period_3'],
-    teamBFoulsPeriod4: ['teamBFoulsPeriod4', 'team_b_fouls_period_4']
+    teamBFoulsPeriod4: ['teamBFoulsPeriod4', 'team_b_fouls_period_4'],
+    teamAColour: ['teamAColour', 'team_a_colour', 'teamAColor', 'team_a_color'],
+    teamBColour: ['teamBColour', 'team_b_colour', 'teamBColor', 'team_b_color'],
+    teamACoachName: ['teamACoachName', 'team_a_coach_name'],
+    teamACoachBipin: ['teamACoachBipin', 'team_a_coach_bipin'],
+    teamAAssistantCoachName: ['teamAAssistantCoachName', 'team_a_assistant_coach_name'],
+    teamBCoachName: ['teamBCoachName', 'team_b_coach_name'],
+    teamBCoachBipin: ['teamBCoachBipin', 'team_b_coach_bipin'],
+    teamBAssistantCoachName: ['teamBAssistantCoachName', 'team_b_assistant_coach_name']
   };
   for (const k of Object.keys(DEFAULT_DATA)) {
-    if (k === 'teamAPlayers' || k === 'teamBPlayers' || k === 'runningScoreEvents' || k === 'periodScoresTeamA' || k === 'periodScoresTeamB' || k === 'finalScoreTeamA' || k === 'finalScoreTeamB' || k === 'pointsPerColumn' || k === 'r2PeriodScoresTeamA' || k === 'r2PeriodScoresTeamB' || k === 'r3FinalScoreTeamA' || k === 'r3FinalScoreTeamB' || k === 'r3WinningTeamName' || k === 'playerScoringOverrides') continue;
+    if (
+      k === 'teamAPlayers' ||
+      k === 'teamBPlayers' ||
+      k === 'runningScoreEvents' ||
+      k === 'periodScoresTeamA' ||
+      k === 'periodScoresTeamB' ||
+      k === 'finalScoreTeamA' ||
+      k === 'finalScoreTeamB' ||
+      k === 'pointsPerColumn' ||
+      k === 'r2PeriodScoresTeamA' ||
+      k === 'r2PeriodScoresTeamB' ||
+      k === 'r3FinalScoreTeamA' ||
+      k === 'r3FinalScoreTeamB' ||
+      k === 'r3WinningTeamName' ||
+      k === 'l3Officials' ||
+      k === 'playerScoringOverrides'
+    ) {
+      continue;
+    }
     const isInt = INTEGER_KEYS.includes(k);
     const aliases = keyAliases[k] || [k];
     for (const key of aliases) {
@@ -457,6 +570,7 @@ function normalizeExtracted(parsed) {
   }
   out.teamAPlayers = normalizePlayerArray(parsed.teamAPlayers || parsed.team_a_players);
   out.teamBPlayers = normalizePlayerArray(parsed.teamBPlayers || parsed.team_b_players);
+  out.l3Officials = normalizeL3OfficialsArray(parsed.l3Officials || parsed.l3_officials);
   out.runningScoreEvents = normalizeRunningScoreEvents(parsed.runningScoreEvents || parsed.running_score_events || []);
   out.periodScoresTeamA = normalizePeriodScores(parsed.periodScoresTeamA || parsed.period_scores_team_a);
   out.periodScoresTeamB = normalizePeriodScores(parsed.periodScoresTeamB || parsed.period_scores_team_b);
@@ -558,18 +672,30 @@ async function extractWithChatCompletionsVision(filePath, originalName, multerMi
 
     rawText = await res.text();
     if (res.ok) break;
-    const retryable400 =
+    const raiseForTruncatedJson =
+      res.status === 400 &&
+      isGroqJsonOutputTruncation(rawText) &&
+      maxCompletionTokens < GROQ_MAX_COMPLETION_TOKENS_CAP;
+    if (raiseForTruncatedJson) {
+      const prev = maxCompletionTokens;
+      maxCompletionTokens = Math.min(
+        GROQ_MAX_COMPLETION_TOKENS_CAP,
+        Math.max(prev * 2, 8192)
+      );
+      if (maxCompletionTokens > prev) continue;
+    }
+    const retryable400Lower =
       res.status === 400 &&
       /max_completion_tokens|max_tokens/i.test(rawText) &&
       maxCompletionTokens > 256;
-    if (retryable400) {
+    if (retryable400Lower) {
       maxCompletionTokens = Math.max(256, Math.floor(maxCompletionTokens / 2));
       continue;
     }
     throw new Error(`Vision chat API HTTP ${res.status}: ${rawText.slice(0, 800)}`);
   }
   if (!res.ok) {
-    throw new Error(`Vision chat API HTTP ${res.status} (after lowering max_completion_tokens): ${rawText.slice(0, 800)}`);
+    throw new Error(`Vision chat API HTTP ${res.status} (after retries): ${rawText.slice(0, 800)}`);
   }
   let data;
   try {
@@ -831,6 +957,8 @@ function buildScoresheetFromRequestBody(body) {
       data[k] = (b[k] != null ? String(b[k]) : '').trim();
     } else if (k === 'playerScoringOverrides') {
       data[k] = normalizePlayerScoringOverrides(b[k]);
+    } else if (k === 'l3Officials') {
+      data[k] = normalizeL3OfficialsArray(b[k]);
     } else if (INTEGER_KEYS.includes(k)) {
       const n = parseInt(String(b[k]), 10);
       data[k] = Number.isNaN(n) ? 0 : n;
