@@ -292,7 +292,6 @@ function getMinimalImagePrompt(sheetVariant) {
     schemaBlock +
     '\n\nReturn a single JSON object matching the schema. Use empty string "" for any value not visible. No other text.' +
     '\n\nInclude every top-level key from the schema in your JSON. Use [] only for teamAPlayers, teamBPlayers, or runningScoreEvents when those sections are missing or unreadable; if you can read marks or rows, you must populate them. Use 0 for numeric fields only when the value is not shown on the sheet.' +
-    '\n\nRosters: teamAPlayers and teamBPlayers must include every visible player row in each printed table (often 12 per team on FIBA), not only the first two. When building JSON, output teamAPlayers and teamBPlayers before runningScoreEvents if possible.' +
     fibaFlatJsonNote
   );
 }
@@ -1208,8 +1207,9 @@ async function extractWithGroq(filePath, originalName, multerMime, sheetVariant)
     model,
     sheetVariant
   };
-  const twoPhaseOff = String(process.env.FIBA_TWO_PHASE || '').trim().toLowerCase() === '0';
-  if (resolveSheetVariant(sheetVariant) === 'fiba' && !twoPhaseOff) {
+  /** Before FIBA experiments, extraction was one vision call (like Ireland). Two-phase is opt-in: set FIBA_TWO_PHASE=1. */
+  const useFibaTwoPhase = String(process.env.FIBA_TWO_PHASE || '').trim().toLowerCase() === '1';
+  if (resolveSheetVariant(sheetVariant) === 'fiba' && useFibaTwoPhase) {
     const rosterNorm = await extractWithChatCompletionsVision(filePath, originalName, multerMime, {
       ...baseOpts,
       userTextOverride: getFibaPhase1Prompt()
