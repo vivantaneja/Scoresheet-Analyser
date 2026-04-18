@@ -44,6 +44,9 @@
       border-radius: 6px;
       font-size: 0.85rem;
       line-height: 1.45;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .nav { margin-bottom: 20px; }
     .nav a { color: var(--muted); font-size: 0.85rem; text-decoration: none; }
@@ -87,7 +90,21 @@
       outline: none;
       border-color: var(--accent);
     }
-    .save-status { position: fixed; bottom: 16px; right: 16px; padding: 8px 12px; border-radius: 6px; font-size: 0.8rem; opacity: 0; transition: opacity 0.2s; }
+    .save-status {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      left: auto;
+      max-width: min(420px, calc(100vw - 32px));
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      opacity: 0;
+      transition: opacity 0.2s;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      box-sizing: border-box;
+    }
     .save-status.saved { background: var(--home); color: var(--bg); opacity: 1; }
     .save-status.error { background: var(--away); color: #fff; opacity: 1; }
     .confirm-bar { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
