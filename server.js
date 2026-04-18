@@ -843,30 +843,6 @@ function getErrorMessage(err) {
   return String(err?.message || err?.toString?.() || '');
 }
 
-/** Groq/OpenAI-style JSON mode: incomplete object when max_completion_tokens is hit (json_validate_failed, etc.). */
-function isExtractionJsonOutputLimitError(err) {
-  const msg = getErrorMessage(err);
-  const lower = msg.toLowerCase();
-  return (
-    /extract_json_output_limit/i.test(msg) ||
-    /json_validate_failed|failed to generate json|max completion tokens|failed_generation|valid document/i.test(lower)
-  );
-}
-
-function formatExtractionOutputLimitUserMessage() {
-  return (
-    'The AI hit its output limit while turning this sheet into data (the response was cut off before valid JSON finished). ' +
-    'That often happens on very full score sheets or large photos. Try a smaller or sharper image, crop closer to the page, or use a more compressed JPEG. ' +
-    'If it keeps failing, whoever runs this site can raise CHAT_VISION_MAX_TOKENS or GROQ_MAX_COMPLETION_TOKENS_CAP on the server.'
-  );
-}
-
-/** Stable code for clients (e.g. upload UI); use with formatExtractionErrorForClient text. */
-function getExtractionErrorCode(err) {
-  if (isExtractionJsonOutputLimitError(err)) return 'EXTRACTION_OUTPUT_LIMIT';
-  return 'EXTRACTION_FAILED';
-}
-
 function parseRetryDelayMs(err) {
   const msg = getErrorMessage(err);
   const secondsMatch = msg.match(/retry in\s+([0-9]+(?:\.[0-9]+)?)s/i);
@@ -895,8 +871,19 @@ function formatExtractionErrorForClient(err) {
   if (/extraction supports images only/i.test(msg)) return msg;
   if (/image is still too large|after encoding/i.test(msg)) return msg;
 
-  if (isExtractionJsonOutputLimitError(err)) {
-    return formatExtractionOutputLimitUserMessage();
+  if (/extract_json_output_limit/i.test(msg)) {
+    return (
+      'This scoresheet needed more space than the AI is allowed to write in one step (JSON was cut off). ' +
+      'Try a smaller or lower-resolution photo, crop closer to the table and lines, or a more compressed JPEG. ' +
+      'If it keeps happening, the host may need to raise the vision output token limit (CHAT_VISION_MAX_TOKENS / GROQ_MAX_COMPLETION_TOKENS_CAP).'
+    );
+  }
+
+  if (/json_validate_failed|max completion tokens|failed_generation|valid document/i.test(lower)) {
+    return (
+      'The AI ran out of room while building the structured result for this image (output was cut off before JSON finished). ' +
+      'Try a smaller or clearer crop of the scoresheet, or ask the host to allow a larger output budget if the sheet is very busy.'
+    );
   }
 
   if (/\b401\b|invalid.?api.?key|invalid_api_key/i.test(lower)) {
@@ -935,7 +922,7 @@ function formatExtractionErrorForClient(err) {
   }
 
   if (/vision chat api http 400/i.test(lower)) {
-    return 'The AI service rejected the request (400). If you are not using a normal photo file, use JPEG, PNG, GIF, or WebP.';
+    return 'The AI service rejected the request (400). Use a JPEG, PNG, GIF, or WebP image.';
   }
 
   if (/vision chat api http 5\d\d/i.test(lower)) {
@@ -968,41 +955,6 @@ function getFibaPhase1Prompt() {
   );
 }
 
-/**
- * FIBA phase 2a: R1 running score only (large JSON). No full schema file — avoids input bloat and keeps output budget for events.
- */
-function getFibaPhase2RunningPrompt() {
-  return (
-    'FIBA scoresheet — **scoring split A (R1 running score only)**. Rosters were extracted in an earlier pass. Output **one** JSON object.\n\n' +
-    '**Include only these keys:** `teamAPlayers`: [], `teamBPlayers`: [], `runningScoreEvents`: [ … ]\n\n' +
-    '**runningScoreEvents:** One object per scoring mark in **chronological order**. Each: `{"point": <int 1–160>, "team": "A"|"B", "type": "1"|"2"|"3", "jersey": "<string>"}`.\n' +
-    '- `point`: 1st score of the game = 1, then 2, 3, … (FIBA may use up to 160 plays across four 40-point blocks).\n' +
-    '- `team`: A = home / L1 side of the R1 grid; B = away / L2 side.\n' +
-    '- `type`: "1" = free throw (dot in inner point column); "2" = two-pointer (slash through play number); "3" = three-pointer (circle around play number).\n' +
-    '- `jersey`: scorer kit number from the outer jersey column on that row.\n\n' +
-    'Do not add other top-level keys. No markdown. JSON only.'
-  );
-}
-
-/**
- * FIBA phase 2b: period lines, finals, R2/R3 — small JSON. Empty rosters and empty runningScoreEvents.
- */
-function getFibaPhase2TotalsPrompt() {
-  return (
-    'FIBA scoresheet — **scoring split B (periods and finals only)**. Ignore the R1 play-by-play table for this response. Output **one** JSON object.\n\n' +
-    '**Include only these keys:**\n' +
-    '- `teamAPlayers`: [], `teamBPlayers`: [], `runningScoreEvents`: []\n' +
-    '- `periodScoresTeamA`, `periodScoresTeamB`: four integers each (points per quarter Q1–Q4).\n' +
-    '- `finalScoreTeamA`, `finalScoreTeamB`: printed team finals.\n' +
-    '- `r2PeriodScoresTeamA`, `r2PeriodScoresTeamB`: four integers each from R2 if present; else use period scores or zeros.\n' +
-    '- `r2ExtraPeriodPointsTeamA`, `r2ExtraPeriodPointsTeamB`: overtime points only; 0 if none.\n' +
-    '- `r3FinalScoreTeamA`, `r3FinalScoreTeamB`, `r3WinningTeamName`: R3 final row.\n' +
-    '- `pointsPerColumn`: 40 or 60 per R1 block.\n\n' +
-    'Use 0 only when a number is not printed. No markdown. JSON only.'
-  );
-}
-
-/** Single large phase-2 call (embeds full schema). Set env FIBA_PHASE2_SINGLE=1 to use; default is split prompts to avoid json_validate_failed / output truncation. */
 function getFibaPhase2Prompt() {
   let schemaBlock = '';
   try {
@@ -1165,7 +1117,7 @@ async function extractWithChatCompletionsVision(filePath, originalName, multerMi
       : groqMaxCompletionTokensFromEnv();
   let res;
   let rawText = '';
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; attempt < 6; attempt++) {
     const body = {
       model,
       temperature: 0,
@@ -1257,41 +1209,24 @@ async function extractWithGroq(filePath, originalName, multerMime, sheetVariant)
     sheetVariant
   };
   const twoPhaseOff = String(process.env.FIBA_TWO_PHASE || '').trim().toLowerCase() === '0';
-  const fibaPhase2Single = String(process.env.FIBA_PHASE2_SINGLE || '').trim().toLowerCase() === '1';
   if (resolveSheetVariant(sheetVariant) === 'fiba' && !twoPhaseOff) {
     const rosterNorm = await extractWithChatCompletionsVision(filePath, originalName, multerMime, {
       ...baseOpts,
       userTextOverride: getFibaPhase1Prompt()
     });
     try {
-      const cap = getGroqMaxCompletionTokensCap();
-      const fromEnv = groqMaxCompletionTokensFromEnv();
-      const maxEvents = Math.min(cap, Math.max(fromEnv, 8192));
-      const maxTotals = Math.min(cap, Math.max(6144, fromEnv));
-      let scoreNorm;
-      if (fibaPhase2Single) {
-        scoreNorm = await extractWithChatCompletionsVision(filePath, originalName, multerMime, {
-          ...baseOpts,
-          userTextOverride: getFibaPhase2Prompt(),
-          maxCompletionTokens: Math.min(cap, Math.max(fromEnv, 8192))
-        });
-      } else {
-        const eventsNorm = await extractWithChatCompletionsVision(filePath, originalName, multerMime, {
-          ...baseOpts,
-          userTextOverride: getFibaPhase2RunningPrompt(),
-          maxCompletionTokens: maxEvents
-        });
-        const totalsNorm = await extractWithChatCompletionsVision(filePath, originalName, multerMime, {
-          ...baseOpts,
-          userTextOverride: getFibaPhase2TotalsPrompt(),
-          maxCompletionTokens: maxTotals
-        });
-        scoreNorm = { ...totalsNorm, runningScoreEvents: eventsNorm.runningScoreEvents };
-      }
+      const scoreNorm = await extractWithChatCompletionsVision(filePath, originalName, multerMime, {
+        ...baseOpts,
+        userTextOverride: getFibaPhase2Prompt(),
+        maxCompletionTokens: Math.min(
+          getGroqMaxCompletionTokensCap(),
+          Math.max(groqMaxCompletionTokensFromEnv(), 8192)
+        )
+      });
       return mergeFibaPhaseResults(rosterNorm, scoreNorm);
     } catch (e) {
       if (/extract_json_output_limit/i.test(getErrorMessage(e))) throw e;
-      console.warn('FIBA scoring pass failed; using roster pass only:', getErrorMessage(e));
+      console.warn('FIBA scoring pass (2/2) failed; using roster pass only:', getErrorMessage(e));
       return rosterNorm;
     }
   }
@@ -1711,7 +1646,7 @@ app.post(
       console.error('Extraction error:', msg);
       return res.status(500).json({
         error: formatExtractionErrorForClient(extractErr),
-        errorCode: getExtractionErrorCode(extractErr),
+        errorCode: 'EXTRACTION_FAILED',
         uploaded: true,
         filename: originalName
       });
