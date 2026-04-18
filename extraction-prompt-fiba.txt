@@ -1,0 +1,128 @@
+# FIBA / international scoresheet (`extraction-prompt-fiba.txt`)
+# Pair with `schema-fiba.json`. For Basketball Ireland domestic sheets use `extraction-prompt.txt` + `schema.json`.
+
+---
+
+## Output shape (read before the layout)
+
+Return **one flat JSON object** matching `schema-fiba.json`. **teamAPlayers**, **teamBPlayers**, and **runningScoreEvents** must be **top-level properties** (arrays at the root of the JSON). **Do not** nest those arrays inside objects named `L1`, `L2`, `R1`, etc.  -  those letters describe **where data appears on the paper**, not how to structure the JSON.
+
+**teamAName** / **teamBName** come from the **“Team A:”** / **“Team B:”** lines in L1 and L2. If the sheet also prints team names in the main header, you may use those for the same fields.
+
+---
+
+## Page structure
+
+The main game box is split into **L** (left) and **R** (right).
+
+- **L** has three sections, top to bottom: **L1** (Team A), **L2** (Team B), **L3** (officials).
+- **R** has three sections: **R1** (running score), **R2** (period scores), **R3** (final).
+
+A **header** sits **above** L and R and is **not** split into two sides.
+
+---
+
+## Header (full width, two rows)
+
+**Row 1:** Competition, date, time, and **referee** (chief referee).
+
+**Row 2:** Game number, place, **umpire 1**, **umpire 2**.
+
+Map to JSON: **competitionName**, **date** (YYYY-MM-DD), **time** (HH:MM 24h), **referee1** (referee), **gameNumber**, **place**, and map **umpire 1** → **referee2**, **umpire 2** → **umpire2Name** (see schema). Team names for **teamAName** / **teamBName** are taken from the **Team A** / **Team B** blocks in L1 / L2 (see above); use the header only if team names appear there on your form.
+
+---
+
+## L1 – Team A (home)
+
+All information for the **home** team.
+
+### Team A header block (top of L1)
+
+- **Team A name**  -  in the underlined space after **“Team A:”** → **teamAName**.
+- **Colour**  -  in the underlined space after **“Colour”** → **teamAColour**.
+- **Time-outs:** boxes for **first half**, **second half**, and **extra periods** (each period group has boxes to the right).
+  - A **slash** or **backslash** in a box = one time-out used in that segment.
+  - **Two** time-outs available in the first half, **three** in the second, **three** per extra period.
+  - A **horizontal line** through a box = that time-out was **not** used by the end of that period (still “accounted for” on the sheet).
+  - If extra-period boxes have **no** slashes/lines and no overtime was played, use **0** for extra-period time-outs.
+  - Map counts to **teamATimeoutsFirstHalf**, **teamATimeoutsSecondHalf**, **teamATimeoutsExtraPeriods** (integers).
+- **Team fouls:** one group of **four** period boxes (same slash/backslash vs horizontal-line rules as time-outs). Count only **/** or **\\** as a team foul used. Integers → **teamAFoulsPeriod1** … **teamAFoulsPeriod4** (0–4 each). If a team fills all four period boxes, further team fouls can still produce opponent free throws (sheet rules); extract what is printed.
+
+### Player table (below the Team A header)
+
+Columns, **left to right**:
+
+1. **Licence No.** → **bipinNo**
+2. **Player names** (any format) → **playerName**
+3. **Kit No.** → **kitNo**
+4. **Player In**  -  four boxes (one per quarter) → **playerInQuarter1** … **playerInQuarter4**
+5. **Fouls**  -  five boxes → **foul1** … **foul5**
+
+**Player In:** Used to show if the player played in each quarter. An empty box means they did not play **that** quarter. If **all four** are empty, the scorekeeper may not have filled the column  -  **do not** infer “did not play the game.” Players who appear in the game have an **X** in the relevant box; **starters’ X’s are often circled**  -  treat circled X like X for “played.”
+
+**Fouls (per box):** **P** (no free throws), **P1** / **P2** / **P3** (foul leading to 1 / 2 / 3 free throws), **U** (unsportsmanlike), **D** (disqualifying), **T** (technical). A **horizontal line** can mean no foul by end of game (often left blank instead). Fifth foul → player fouled out.
+
+Emit **one JSON object per printed roster row** in **teamAPlayers**  -  typically **up to 12** rows on standard FIBA sheets. **Every** visible row; not only the first two. Rows below the player grid are **not** players.
+
+### Staff (below the player table)
+
+- **First row:** Coach name and **BIPIN** → **teamACoachName**, **teamACoachBipin**
+- **Second row:** Assistant coach name (often **no BIPIN**) → **teamAAssistantCoachName**
+
+---
+
+## L2 – Team B (away)
+
+**Same layout as L1**, for the away team. Use **teamBName**, **teamBColour**, **teamBPlayers**, **teamBCoachName**, **teamBCoachBipin**, **teamBAssistantCoachName**, and team B time-out / team foul fields.
+
+---
+
+## L3 – Officials
+
+Listed in **sheet order** (read top to bottom): **scorekeeper**, **assistant scorekeeper**, **timekeeper**, **24s operator**, **referee**, **umpire 1**, **umpire 2**, plus a line for **captain’s signature in case of protest** (often no BIPIN).
+
+Emit **l3Officials** as an array of `{ "role", "bipinNo", "name", "initials" }` with roles: **scorekeeper**, **assistantScorekeeper**, **timekeeper**, **shotClock24s**, **referee1**, **referee2** (map **umpire 1** here if the sheet labels it that way), **captainSignature**, etc. Use **""** for **bipinNo** when missing. If the header already filled referee/umpires, **L3** may repeat or supplement names  -  extract what appears in **L3** into **l3Officials** consistently with the schema.
+
+---
+
+## R1 – Running score
+
+Running score through the game. There are **four** main columns on many FIBA sheets; each main column covers **40 points** of scoring sequence (e.g. **1–40**, **41–80**, **81–120**, **121–160**). Some sheets use **60** points per main column  -  **pointsPerColumn** = **40** or **60**.
+
+Each **main** column has **four inner columns**:
+
+- **1st & 4th (outer):** jersey numbers  -  **Team A** on the home side, **Team B** on the away side.
+- **2nd & 3rd (inner):** **point marks** for Team A and Team B respectively.
+
+When a basket is scored, a mark goes in the **inner** point column for that team. **Dot** = 1 pt (free throw); **slash or backslash** through the play number = 2 pts; **circle** around the play number = **3 pts** (three-pointer). The **jersey** of the scorer appears in that team’s **outer** column on that row.
+
+**Chronological plays:** **runningScoreEvents** uses **point** = 1st score of the game, 2nd, … (not always the printed cell index). **team** = **"A"** or **"B"**. **type** = **"1"** | **"2"** | **"3"**. **jersey** = scorer’s kit number.
+
+**Quarter boundaries:** Points scored at the end of a quarter are sometimes indicated by an **underline** under the last marked play (and jersey) for each team  -  use that to sanity-check period logic if needed.
+
+**After the game:** Cells for plays beyond the final score are often **scribbled out** with a **vertical squiggly line** through the rest of the grid  -  **do not** count those as scoring events.
+
+---
+
+## R2 – Period scores
+
+**Points scored in each period only** (not running totals). **r2PeriodScoresTeamA** / **r2PeriodScoresTeamB** = four integers **[Q1, Q2, Q3, Q4]**. If there is a separate **extra period(s)** row, use **r2ExtraPeriodPointsTeamA** / **r2ExtraPeriodPointsTeamB** for overtime points only; otherwise **0**.
+
+---
+
+## R3 – Final
+
+**Total** final score including all periods and overtime: **r3FinalScoreTeamA**, **r3FinalScoreTeamB**, and **r3WinningTeamName** as printed under the final.
+
+Also fill **periodScoresTeamA/B** and **finalScoreTeamA/B** when visible (see schema).
+
+---
+
+## Accuracy before returning JSON
+
+1. Header and L1/L2/R1/R2/R3 consistent with printed numbers; **finalScoreTeamA/B** and **r3*** fields agree.
+2. **teamAPlayers** / **teamBPlayers**: one object per roster row (often **12** per team); **not** a partial list.
+3. **runningScoreEvents** sums (by **type**) should match finals if every basket is captured.
+4. Prefer emitting **teamAPlayers** and **teamBPlayers** **before** **runningScoreEvents** in your JSON.
+
+Return a single JSON object matching **schema-fiba.json**. Use **""** for missing strings and **[]** for empty arrays where allowed.

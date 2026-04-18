@@ -5,7 +5,7 @@
       "src": "server.js",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": ["*.html", "assets/**", "schema.json", "extraction-prompt.txt"]
+        "includeFiles": ["*.html", "assets/**", "schema.json", "schema-fiba.json", "extraction-prompt.txt", "extraction-prompt-fiba.txt"]
       }
     }
   ],

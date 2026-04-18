@@ -1,4 +1,4 @@
-# Node-only image for Groq extraction.
+# Node-only image for the scoresheet analyser.
 
 FROM node:20-bookworm-slim
 

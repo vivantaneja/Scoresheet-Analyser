@@ -16,9 +16,9 @@ cp .env.example .env
 
 In `.env`:
 
-1. **`GROQ_API_KEY`**: from [Groq Console → API Keys](https://console.groq.com/keys).
-2. Optional **`GROQ_MODEL`**: default `meta-llama/llama-4-scout-17b-16e-instruct` ([vision docs](https://console.groq.com/docs/vision)).
-3. Optional **`CHAT_VISION_MAX_TOKENS`**: default `8192` (Groq cap). Large scoresheets need headroom for valid JSON with `json_object` mode; if the API rejects max output, try `4096`.
+1. **`GROQ_API_KEY`**: vision extraction API key (required for uploads to work).
+2. Optional **`GROQ_MODEL`**: defaults are in `.env.example`.
+3. Optional **`CHAT_VISION_MAX_TOKENS`**: default `8192`. Large scoresheets need headroom for valid JSON with `json_object` mode; if the API rejects max output, try `4096`.
 4. Optional **`SESSION_SECRET`**: 32+ random characters. Required when `NODE_ENV=production`; omitted locally uses a dev-only default.
 5. Optional **`UPSTASH_REDIS_REST_URL`** / **`UPSTASH_REDIS_REST_TOKEN`**: omit locally (uses **`.user-data/`**); required on Vercel for persistence.
 
@@ -28,11 +28,11 @@ In `.env`:
 npm start
 ```
 
-Open the app; the terminal should show `GROQ_API_KEY: set`.
+Open the app; the terminal should show that the extraction API key is set.
 
 ## Images only
 
-Use **JPEG, PNG, GIF, or WebP**. Keep files small enough for Groq’s payload limit (~4MB as a data URL; ~2.5MB file size is a safe target).
+Use **JPEG, PNG, GIF, or WebP**. Size limits: **`UPLOAD_MAX_FILE_MB`** (multipart; default **20** locally, **~4** on Vercel because the **whole request body is ~4.5MB max** on Vercel) and **`VISION_MAX_DATA_URL_MB`** (base64 sent to the vision API; default **3.5**). Base64 is ~33% larger than the raw file; for bigger images use self-hosting/Docker or a direct-to-storage upload flow.
 
 ## Docker
 

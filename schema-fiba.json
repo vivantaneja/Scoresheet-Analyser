@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Basketball Match",
-  "description": "Basketball scoresheet (Basketball Ireland layout and/or FIBA international scoresheet). Page split L (left) and R (right): L1 Team A, L2 Team B, L3 officials; R1 running score, R2 period scores (including FIBA extra-period row), R3 final. FIBA header: Competition, Game No., Referee + Umpire 1 + Umpire 2, Scorekeeper, Assistant Scorekeeper, Timekeeper, 24s operator. Running score may use up to four 40-point blocks (plays 1–160 on FIBA); three blocks (1–120) on many domestic sheets.",
+  "title": "Basketball Match (FIBA layout)",
+  "description": "FIBA / international scoresheet. Layout doc: extraction-prompt-fiba.txt. Page: L = L1 Team A, L2 Team B, L3 officials; R = R1 running score, R2 period scores, R3 final. Header (full width): row 1 = competition, date, time, referee; row 2 = game number, place, umpires 1 & 2. L1/L2 player table columns: Licence No., Player name, Kit No., Player In (×4), Fouls (×5). L3 order on sheet: scorekeeper, assistant scorekeeper, timekeeper, 24s, referee, umpires, captain signature. R1: four 40-point blocks typical (plays 1–160); pointsPerColumn 40 or 60. For Ireland domestic sheets use schema.json + extraction-prompt.txt.",
   "type": "object",
   "properties": {
     "teamAName": {
@@ -190,7 +190,7 @@
     "teamAPlayers": {
       "type": "array",
       "maxItems": 12,
-      "description": "L1 player table only (home / Team A). One object per printed roster row, top to bottom  -  typically 12 rows on FIBA/Oceania; do not output only the first two players. Columns: BIPIN, Player In ×4, Name, Kit No., Fouls ×5. Exclude coach rows (use teamACoachName etc.).",
+      "description": "L1 player table (home / Team A). One object per printed roster row. Column order on sheet: Licence No., Player name, Kit No., Player In Q1–Q4, Fouls ×5 (maps to bipinNo, playerName, kitNo, playerInQuarter1–4, foul1–5). Up to 12 rows typical. Exclude coach rows.",
       "items": {
         "type": "object",
         "properties": {
@@ -212,7 +212,7 @@
     "teamBPlayers": {
       "type": "array",
       "maxItems": 12,
-      "description": "L2 player table (away / Team B). Same as teamAPlayers: one object per roster row (typically 12 on FIBA), not a partial list.",
+      "description": "L2 player table (away / Team B). Same column order and rules as teamAPlayers.",
       "items": {
         "type": "object",
         "properties": {

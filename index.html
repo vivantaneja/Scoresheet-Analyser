@@ -254,6 +254,15 @@
       color: #0a0e14;
     }
     .btn-primary:hover { filter: brightness(1.08); }
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+    }
+    .btn-secondary:hover {
+      background: var(--surface-hover);
+      border-color: var(--text-secondary);
+    }
     .btn.hidden { display: none !important; }
 
     /* Side column cards */
@@ -358,6 +367,77 @@
       padding-top: calc(var(--step) * 1.5);
       border-top: 1px solid var(--border);
     }
+
+    fieldset.sheet-style-row {
+      border: none;
+      margin: 0 0 calc(var(--step) * 2);
+      padding: calc(var(--step) * 1.5) calc(var(--step) * 2);
+      border-radius: var(--radius-md);
+      background: var(--bg-elevated);
+      box-shadow: 0 0 0 1px var(--border);
+      min-width: 0;
+    }
+    fieldset.sheet-style-row:disabled {
+      opacity: 0.72;
+    }
+    .sheet-style-label,
+    fieldset.sheet-style-row > legend.sheet-style-label {
+      display: block;
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      margin: 0 0 calc(var(--step) * 1);
+      padding: 0;
+      float: none;
+      width: 100%;
+    }
+    .sheet-style-options {
+      display: flex;
+      flex-direction: column;
+      gap: calc(var(--step) * 1);
+    }
+    @media (min-width: 520px) {
+      .sheet-style-options {
+        flex-direction: row;
+        flex-wrap: wrap;
+        column-gap: calc(var(--step) * 2.5);
+        row-gap: calc(var(--step) * 1);
+      }
+    }
+    .sheet-style-opt {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      font-size: 0.875rem;
+      color: var(--text);
+      margin: 0;
+    }
+    .sheet-style-opt input {
+      accent-color: var(--accent);
+      width: 1rem;
+      height: 1rem;
+    }
+    fieldset.sheet-style-row[aria-busy="true"] {
+      pointer-events: none;
+      user-select: none;
+    }
+    fieldset.sheet-style-row[aria-busy="true"] .sheet-style-opt {
+      cursor: not-allowed;
+    }
+    .sheet-style-hint {
+      margin: calc(var(--step) * 1) 0 0;
+      font-size: 0.8125rem;
+      color: var(--text-secondary);
+      line-height: 1.4;
+      max-width: 40rem;
+    }
+    fieldset.sheet-style-row.sheet-style-row--prompt {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
   </style>
 </head>
 <body>
@@ -384,6 +464,15 @@
         <h1 id="page-title">Turn a paper scoresheet into structured stats</h1>
         <p class="lead">Upload a clear photo of your sheet. We extract teams, players, fouls, scores, and more; you verify everything on the next screen.</p>
 
+        <fieldset id="sheet-variant-fieldset" class="sheet-style-row" aria-labelledby="sheet-style-label" aria-busy="false">
+          <legend id="sheet-style-label" class="sheet-style-label">Scoresheet layout</legend>
+          <div class="sheet-style-options">
+            <label class="sheet-style-opt"><input type="radio" name="sheetVariant" value="ireland" /> Basketball Ireland / domestic</label>
+            <label class="sheet-style-opt"><input type="radio" name="sheetVariant" value="fiba" /> FIBA / international</label>
+          </div>
+          <p class="sheet-style-hint">Pick one before you upload  -  the extractor uses different prompts for each form.</p>
+        </fieldset>
+
         <div class="dropzone-wrap">
           <div id="upload" class="dropzone" role="button" tabindex="0" aria-describedby="upload-hint">
             <svg class="dropzone-icon" viewBox="0 0 48 48" fill="none" aria-hidden="true">
@@ -391,7 +480,7 @@
               <path d="M18 28h12M24 22v12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" />
             </svg>
             <p class="dropzone-title">Drop a file here or click to browse</p>
-            <p class="dropzone-sub" id="upload-hint">Use a well-lit photo. Very large files may fail the upload limit.</p>
+            <p class="dropzone-sub" id="upload-hint">Use a well-lit photo. Large phone photos are resized in your browser before upload. After extraction, you can drop or select another image here without refreshing the page.</p>
             <div id="turnstile-wrap" class="turnstile-wrap" hidden></div>
             <div class="format-chips" aria-label="Accepted file types">
               <span>JPEG</span>
@@ -403,6 +492,7 @@
             <div id="upload-status" class="dropzone-upload-status" aria-live="polite"></div>
             <div class="btn-row">
               <a href="review.html" id="go-review" class="btn btn-primary hidden">Review extracted stats →</a>
+              <button type="button" id="upload-another" class="btn btn-secondary hidden">Upload another image</button>
             </div>
           </div>
         </div>
@@ -422,6 +512,7 @@
             <li>Fill the frame with the sheet; avoid heavy glare and blur.</li>
             <li>Handwriting and faint marks are error-prone. Always cross-check on the review page.</li>
             <li>Extraction runs in the cloud; do not upload sheets you are not allowed to share.</li>
+            <li>iPhone photos are compressed automatically so they stay within upload limits.</li>
           </ul>
         </div>
       </aside>
@@ -447,7 +538,55 @@
       const fileInput = document.getElementById('scoresheet-file');
       const statusEl = document.getElementById('upload-status');
       const goReview = document.getElementById('go-review');
+      const uploadAnother = document.getElementById('upload-another');
       const turnstileWrap = document.getElementById('turnstile-wrap');
+      const sheetVariantFieldset = document.getElementById('sheet-variant-fieldset');
+      const sheetVariantRadios = document.querySelectorAll('input[name="sheetVariant"]');
+      function getSelectedSheetVariant() {
+        var el = document.querySelector('input[name="sheetVariant"]:checked');
+        return el ? el.value : null;
+      }
+      function promptLayoutFirst() {
+        setStatus('Choose Basketball Ireland or FIBA above before uploading.', true);
+        if (sheetVariantFieldset) {
+          sheetVariantFieldset.classList.add('sheet-style-row--prompt');
+          window.clearTimeout(sheetVariantFieldset._promptTimer);
+          sheetVariantFieldset._promptTimer = window.setTimeout(function () {
+            sheetVariantFieldset.classList.remove('sheet-style-row--prompt');
+          }, 5000);
+        }
+        var first = sheetVariantRadios[0];
+        if (first) {
+          try {
+            first.focus();
+          } catch (e) {}
+        }
+      }
+      sheetVariantRadios.forEach(function (r) {
+        r.addEventListener('change', function () {
+          if (sheetVariantFieldset) sheetVariantFieldset.classList.remove('sheet-style-row--prompt');
+          if (getSelectedSheetVariant()) setStatus('');
+        });
+      });
+      let sheetLayoutLockCount = 0;
+      function setSheetLayoutBusy(busy) {
+        const on = !!busy;
+        sheetVariantRadios.forEach(function (r) {
+          r.disabled = on;
+        });
+        if (sheetVariantFieldset) {
+          sheetVariantFieldset.disabled = on;
+          sheetVariantFieldset.setAttribute('aria-busy', on ? 'true' : 'false');
+        }
+      }
+      function beginSheetLayoutLock() {
+        sheetLayoutLockCount += 1;
+        if (sheetLayoutLockCount === 1) setSheetLayoutBusy(true);
+      }
+      function endSheetLayoutLock() {
+        sheetLayoutLockCount = Math.max(0, sheetLayoutLockCount - 1);
+        if (sheetLayoutLockCount === 0) setSheetLayoutBusy(false);
+      }
       const statusSteps = [
         { t: 0, msg: 'Uploading…' },
         { t: 12000, msg: 'Extracting with vision model…' },
@@ -459,8 +598,9 @@
         statusEl.textContent = msg || '';
         statusEl.className = 'dropzone-upload-status' + (isError ? ' error' : msg ? ' success' : '');
       }
-      function setReviewVisible(visible) {
+      function setPostExtractActionsVisible(visible) {
         goReview.classList.toggle('hidden', !visible);
+        uploadAnother.classList.toggle('hidden', !visible);
       }
       function startStatusSequence() {
         statusSteps.forEach(({ t, msg }) => {
@@ -471,8 +611,109 @@
         statusTimeouts.forEach(clearTimeout);
         statusTimeouts = [];
       }
-      function uploadFile(file) {
+      function loadImageFromFile(file) {
+        return new Promise(function (resolve, reject) {
+          const u = URL.createObjectURL(file);
+          const img = new Image();
+          img.onload = function () {
+            URL.revokeObjectURL(u);
+            resolve(img);
+          };
+          img.onerror = function () {
+            URL.revokeObjectURL(u);
+            reject(new Error('Could not read image'));
+          };
+          img.src = u;
+        });
+      }
+      /**
+       * Resize and re-encode as JPEG so uploads fit Vercel (~4.5MB body) and vision API data-URL limits.
+       * Skips work when the file is already small enough.
+       */
+      async function compressImageForUpload(file) {
+        if (!file || !/^image\//.test(file.type)) return file;
+        var img = await loadImageFromFile(file);
+        var w = img.naturalWidth;
+        var h = img.naturalHeight;
+        var maxEdge = 2560;
+        var maxDim = Math.max(w, h);
+        if (file.size < 1.75 * 1024 * 1024 && maxDim <= maxEdge) {
+          return file;
+        }
+        var scale = maxDim > maxEdge ? maxEdge / maxDim : 1;
+        w = Math.max(1, Math.round(w * scale));
+        h = Math.max(1, Math.round(h * scale));
+        var canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        var ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        var targetBytes = 1.85 * 1024 * 1024;
+        var q = 0.85;
+        var blob = await new Promise(function (res) {
+          canvas.toBlob(res, 'image/jpeg', q);
+        });
+        if (!blob) return file;
+        while (blob.size > targetBytes && q > 0.52) {
+          q -= 0.05;
+          blob = await new Promise(function (res) {
+            canvas.toBlob(res, 'image/jpeg', q);
+          });
+          if (!blob) return file;
+        }
+        var hardCap = 2.35 * 1024 * 1024;
+        var attempts = 0;
+        while (blob.size > hardCap && attempts < 5) {
+          attempts++;
+          w = Math.max(1, Math.round(w * 0.88));
+          h = Math.max(1, Math.round(h * 0.88));
+          canvas.width = w;
+          canvas.height = h;
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          q = 0.82;
+          blob = await new Promise(function (res) {
+            canvas.toBlob(res, 'image/jpeg', q);
+          });
+          if (!blob) break;
+        }
+        var base = (file.name || 'scoresheet').replace(/\.[^.]+$/, '');
+        return new File([blob], base + '.jpg', { type: 'image/jpeg' });
+      }
+
+      function uploadErrorMessage(status, data, parseFailed, networkErr) {
+        if (networkErr) {
+          return 'Could not reach the server. Check your connection and that this app is running.';
+        }
+        if (parseFailed) {
+          return 'The server returned an unexpected response. If you opened the app from a file URL, use http://localhost instead.';
+        }
+        if (data && data.error) return data.error;
+        switch (status) {
+          case 400:
+            return 'The upload was not accepted. Use a JPEG, PNG, GIF, or WebP image.';
+          case 413:
+            return 'That file is too large. Try a smaller or more compressed image.';
+          case 429:
+            return 'Too many uploads right now. Wait a bit and try again.';
+          case 503:
+            return 'The server cannot save data right now. On Vercel, Redis (UPSTASH_*) must be configured.';
+          case 500:
+            return 'Extraction or save failed. See the message above if any, or try again.';
+          default:
+            return 'Upload failed (HTTP ' + status + ').';
+        }
+      }
+
+      async function uploadFile(file) {
         if (!file) return;
+        if (!getSelectedSheetVariant()) {
+          promptLayoutFirst();
+          return;
+        }
         if (window.__turnstileSiteKey) {
           const tok = window.__turnstileToken;
           if (!tok) {
@@ -480,43 +721,62 @@
             return;
           }
         }
-        setReviewVisible(false);
-        startStatusSequence();
-        const form = new FormData();
-        form.append('scoresheet', file);
-        if (window.__turnstileToken) {
-          form.append('cf-turnstile-response', window.__turnstileToken);
-        }
-        fetch('/api/upload', { method: 'POST', body: form, credentials: 'same-origin' })
-          .then((r) => r.json().then((d) => ({ ok: r.ok, status: r.status, data: d })))
-          .then(({ ok, status, data: d }) => {
-            stopStatusSequence();
-            if (ok && d && d.ok) {
-              if (d.data && typeof d.data === 'object') {
-                try {
-                  localStorage.setItem('scoresheetAnalyser:lastExtract', JSON.stringify(d.data));
-                } catch (e) {}
-              }
-              setStatus('Done: ' + (d.filename || 'scoresheet'));
-              setReviewVisible(true);
-              if (typeof turnstile !== 'undefined' && window.turnstileWidgetId != null) {
-                try {
-                  turnstile.reset(window.turnstileWidgetId);
-                } catch (e) {}
-                window.__turnstileToken = null;
-              }
-            } else {
-              let msg = d && d.error ? d.error : 'Upload failed (HTTP ' + status + ')';
-              if (status === 429 && d && d.retryAfterSeconds) {
-                msg += ' Retry in about ' + d.retryAfterSeconds + 's.';
-              }
-              setStatus(msg, true);
+        const lockedSheetVariant = getSelectedSheetVariant();
+        beginSheetLayoutLock();
+        try {
+          setPostExtractActionsVisible(false);
+          setStatus('Optimizing image…');
+          var toUpload = file;
+          try {
+            toUpload = await compressImageForUpload(file);
+          } catch (e) {
+            console.warn('Image optimize skipped:', e);
+          }
+          startStatusSequence();
+          const form = new FormData();
+          form.append('scoresheet', toUpload);
+          form.append('sheetVariant', lockedSheetVariant);
+          if (window.__turnstileToken) {
+            form.append('cf-turnstile-response', window.__turnstileToken);
+          }
+          const r = await fetch('/api/upload', { method: 'POST', body: form, credentials: 'same-origin' });
+          const text = await r.text();
+          var d = {};
+          var parseFailed = false;
+          if (text) {
+            try {
+              d = JSON.parse(text);
+            } catch (e) {
+              parseFailed = true;
             }
-          })
-          .catch((e) => {
-            stopStatusSequence();
-            setStatus('Upload failed: ' + (e.message || e), true);
-          });
+          }
+          if (r.ok && d && d.ok) {
+            if (d.data && typeof d.data === 'object') {
+              try {
+                localStorage.setItem('scoresheetAnalyser:lastExtract', JSON.stringify(d.data));
+              } catch (e) {}
+            }
+            setStatus('Done: ' + (d.filename || 'scoresheet'));
+            setPostExtractActionsVisible(true);
+            if (typeof turnstile !== 'undefined' && window.turnstileWidgetId != null) {
+              try {
+                turnstile.reset(window.turnstileWidgetId);
+              } catch (e) {}
+              window.__turnstileToken = null;
+            }
+          } else {
+            var msg = uploadErrorMessage(r.status, d, parseFailed, false);
+            if (r.status === 429 && d && d.retryAfterSeconds && !/retry in about|try again in about/i.test(msg)) {
+              msg += ' Retry in about ' + d.retryAfterSeconds + 's.';
+            }
+            setStatus(msg, true);
+          }
+        } catch (e) {
+          setStatus(uploadErrorMessage(0, null, false, true), true);
+        } finally {
+          stopStatusSequence();
+          endSheetLayoutLock();
+        }
       }
 
       fetch('/api/config', { credentials: 'same-origin' })
@@ -543,13 +803,34 @@
           document.head.appendChild(s);
         })
         .catch(function () {});
+
+      uploadAnother.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        setStatus('');
+        if (!getSelectedSheetVariant()) {
+          promptLayoutFirst();
+          return;
+        }
+        fileInput.click();
+      });
+
       dropzone.addEventListener('click', (e) => {
         if (e.target.closest('.btn')) return;
+        if (!getSelectedSheetVariant()) {
+          e.preventDefault();
+          promptLayoutFirst();
+          return;
+        }
         fileInput.click();
       });
       dropzone.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
+          if (!getSelectedSheetVariant()) {
+            promptLayoutFirst();
+            return;
+          }
           fileInput.click();
         }
       });

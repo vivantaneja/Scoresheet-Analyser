@@ -12,7 +12,7 @@ data.json
 # Uploaded scoresheets
 uploads/
 
-# Last Groq extraction parse (for inspection)
+# Last extraction parse (for inspection)
 last-extraction.json
 gemini-response.json
 
