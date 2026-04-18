@@ -318,6 +318,15 @@
     .demo-card a:hover,
     .upload-privacy-notice a:hover { text-decoration: underline; }
 
+    .demo-save-hint-mobile {
+      display: none;
+    }
+    @media (max-width: 900px) and (pointer: coarse) {
+      .demo-save-hint-mobile {
+        display: inline;
+      }
+    }
+
     .tips-list {
       margin: 0;
       padding-left: 1.15rem;
@@ -504,7 +513,7 @@
           <div class="preview">
             <img id="demo-img" src="assets/demo-scoresheet.png" alt="Example FIBA Oceania scoresheet (filled sample)" draggable="true" />
           </div>
-          <p>Drag this image onto the upload area, or <a href="assets/demo-scoresheet.png" download="demo-scoresheet.png">download</a> it first.</p>
+          <p class="demo-save-hint">Drag this image onto the upload area, or <a id="demo-download" href="assets/demo-scoresheet.png" download="demo-scoresheet.png">save the demo image</a> first. <span class="demo-save-hint-mobile">On your phone, use <strong>Save Image</strong> or your gallery app from the share sheet, or long-press the picture and choose Add to Photos.</span></p>
         </div>
         <div class="card">
           <h2>Before you upload</h2>
@@ -865,6 +874,76 @@
         }
         if (file) uploadFile(file);
       });
+
+      /** Phones: &lt;a download&gt; goes to Files; prefer Share → Photos or open image for long-press Save. */
+      (function initDemoDownload() {
+        var link = document.getElementById('demo-download');
+        if (!link) return;
+        var url = link.getAttribute('href');
+        var absUrl = new URL(url, window.location.href).href;
+        function isCoarsePointerPhone() {
+          try {
+            if (window.matchMedia('(pointer: coarse)').matches) return true;
+          } catch (e) {}
+          return navigator.maxTouchPoints > 0 && window.matchMedia('(max-width: 900px)').matches;
+        }
+        function showImageForGallerySave(win, blob) {
+          if (!win) {
+            window.location.href = URL.createObjectURL(blob);
+            return;
+          }
+          var objectUrl = URL.createObjectURL(blob);
+          win.document.open();
+          win.document.write(
+            '<!DOCTYPE html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Demo scoresheet</title><style>body{margin:0;background:#111;color:#eee;font:15px/1.4 system-ui,-apple-system,sans-serif}p{padding:12px 14px;margin:0}.hint{opacity:.95}img{max-width:100%;height:auto;display:block;margin:0 auto}</style></head><body><p class="hint"><strong>Save to Photos:</strong> touch and hold the image, then choose <strong>Add to Photos</strong> (or Save Image).</p><img src="' +
+              objectUrl +
+              '" alt="Demo scoresheet"/></body></html>'
+          );
+          win.document.close();
+          var img = win.document.querySelector('img');
+          if (img) {
+            img.addEventListener(
+              'load',
+              function () {
+                URL.revokeObjectURL(objectUrl);
+              },
+              { once: true }
+            );
+          } else {
+            URL.revokeObjectURL(objectUrl);
+          }
+        }
+        link.addEventListener('click', function (e) {
+          if (!isCoarsePointerPhone()) return;
+          e.preventDefault();
+          var blank = window.open('about:blank', '_blank');
+          fetch(absUrl)
+            .then(function (res) {
+              if (!res.ok) throw new Error(res.statusText);
+              return res.blob();
+            })
+            .then(function (blob) {
+              var file = new File([blob], 'demo-scoresheet.png', { type: blob.type || 'image/png' });
+              if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                return navigator
+                  .share({ files: [file], title: 'Demo scoresheet' })
+                  .then(function () {
+                    if (blank) {
+                      blank.close();
+                    }
+                  })
+                  .catch(function () {
+                    showImageForGallerySave(blank, blob);
+                  });
+              }
+              showImageForGallerySave(blank, blob);
+            })
+            .catch(function () {
+              if (blank) blank.close();
+              window.location.href = absUrl;
+            });
+        });
+      })();
     })();
   </script>
 </body>
