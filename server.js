@@ -812,7 +812,8 @@ function normalizeExtracted(parsed, sheetVariant) {
     (parsed.L3 && Array.isArray(parsed.L3.officials) ? parsed.L3.officials : null) ||
     (parsed.l3 && Array.isArray(parsed.l3.officials) ? parsed.l3.officials : null);
   out.l3Officials = normalizeL3OfficialsArray(l3Raw);
-  out.runningScoreEvents = normalizeRunningScoreEvents(pickRunningScoreEventsFromParsed(parsed));
+  const pickedEvents = pickRunningScoreEventsFromParsed(parsed);
+  out.runningScoreEvents = normalizeRunningScoreEvents(pickedEvents);
   out.periodScoresTeamA = normalizePeriodScores(parsed.periodScoresTeamA || parsed.period_scores_team_a);
   out.periodScoresTeamB = normalizePeriodScores(parsed.periodScoresTeamB || parsed.period_scores_team_b);
   const finalA = parseInt(String(parsed.finalScoreTeamA ?? parsed.final_score_team_a ?? 0), 10);
@@ -1209,7 +1210,8 @@ async function extractWithGroq(filePath, originalName, multerMime, sheetVariant)
   };
   /** Before FIBA experiments, extraction was one vision call (like Ireland). Two-phase is opt-in: set FIBA_TWO_PHASE=1. */
   const useFibaTwoPhase = String(process.env.FIBA_TWO_PHASE || '').trim().toLowerCase() === '1';
-  if (resolveSheetVariant(sheetVariant) === 'fiba' && useFibaTwoPhase) {
+  const resolvedVariant = resolveSheetVariant(sheetVariant);
+  if (resolvedVariant === 'fiba' && useFibaTwoPhase) {
     const rosterNorm = await extractWithChatCompletionsVision(filePath, originalName, multerMime, {
       ...baseOpts,
       userTextOverride: getFibaPhase1Prompt()
@@ -1223,14 +1225,16 @@ async function extractWithGroq(filePath, originalName, multerMime, sheetVariant)
           Math.max(groqMaxCompletionTokensFromEnv(), 8192)
         )
       });
-      return mergeFibaPhaseResults(rosterNorm, scoreNorm);
+      const merged = mergeFibaPhaseResults(rosterNorm, scoreNorm);
+      return merged;
     } catch (e) {
       if (/extract_json_output_limit/i.test(getErrorMessage(e))) throw e;
       console.warn('FIBA scoring pass (2/2) failed; using roster pass only:', getErrorMessage(e));
       return rosterNorm;
     }
   }
-  return extractWithChatCompletionsVision(filePath, originalName, multerMime, baseOpts);
+  const single = await extractWithChatCompletionsVision(filePath, originalName, multerMime, baseOpts);
+  return single;
 }
 
 let redis = null;
